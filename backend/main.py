@@ -87,7 +87,13 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "database": get_database_v2().is_connected if get_database_v2() else False}
+    try:
+        db = get_database_v2()
+        db_status = db.is_connected if db else False
+    except Exception:
+        db_status = False
+    return {"status": "healthy", "database": db_status}
+
 
 @app.post("/api/research", response_model=ResearchResponse)
 async def research(request: ResearchRequest):
