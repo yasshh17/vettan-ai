@@ -1,0 +1,31 @@
+# Core Backend
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.6.0
+python-dotenv==1.0.1
+
+# LangChain
+langchain==0.1.20
+langchain-openai==0.1.7
+langchain-community==0.0.38
+langchain-core==0.1.53
+langchain-text-splitters==0.0.2
+
+# OpenAI
+openai==1.109.1
+
+# Search
+tavily-python==0.3.3
+beautifulsoup4==4.12.3
+requests==2.31.0
+lxml==5.1.0
+
+# Token tracking
+tiktoken==0.7.0
+
+# Database
+supabase==2.22.0
+websockets>=13.0
+
+# Rate limiting
+slowapi==0.1.9

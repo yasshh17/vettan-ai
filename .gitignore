@@ -1,0 +1,220 @@
+# Environment files containing API keys
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+
+# Specifically protect both frontend and backend
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.env.development
+backend/.env
+backend/.env.local
+
+# ========================================
+# PYTHON / BACKEND
+# ========================================
+
+# Virtual environments (LARGE - 300MB+)
+backend/venv/
+backend/env/
+backend/ENV/
+backend/.venv/
+venv/
+env/
+ENV/
+
+# Python cache and compiled files
+backend/__pycache__/
+backend/**/__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+backend/dist/
+backend/build/
+backend/*.egg-info/
+backend/.eggs/
+
+# Testing
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.tox/
+backend/coverage.xml
+backend/nosetests.xml
+
+# Type checking
+backend/.mypy_cache/
+backend/.dmypy.json
+backend/dmypy.json
+backend/.pyre/
+backend/.pytype/
+
+# Database files (if using SQLite locally)
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# Jupyter Notebook
+backend/.ipynb_checkpoints/
+
+# Celery
+backend/celerybeat-schedule
+backend/celerybeat.pid
+
+# ========================================
+# NODE.JS / FRONTEND
+# ========================================
+
+# Dependencies (LARGE - 500MB+)
+frontend/node_modules/
+node_modules/
+
+# Next.js build outputs
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Production builds
+frontend/dist/
+
+# Package manager files
+frontend/.pnp/
+frontend/.pnp.*
+frontend/.yarn/cache
+frontend/.yarn/unplugged
+frontend/.yarn/build-state.yml
+frontend/.yarn/install-state.gz
+
+# Testing
+frontend/coverage/
+frontend/.nyc_output/
+
+# Vercel
+frontend/.vercel/
+
+# TypeScript
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# ========================================
+# IDE / EDITORS
+# ========================================
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# IntelliJ / PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ========================================
+# OPERATING SYSTEMS
+# ========================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# ========================================
+# LOGS & TEMPORARY FILES
+# ========================================
+
+# Log files
+*.log
+logs/
+*.log.*
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.bak
+*.cache
+
+# ========================================
+# MISCELLANEOUS
+# ========================================
+
+# SSL certificates (if any)
+*.pem
+*.key
+*.cert
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Backups
+*.backup
+*.old
+
+# ========================================
+# PROJECT-SPECIFIC
+# ========================================
+
+# Generated files
+*.generated.*
+
+# Local configuration
+local.settings.json
+.local/
+
+# Coverage reports
+coverage/
+.coverage
+
+# Documentation builds
+docs/_build/
+docs/.doctrees/
+
+# Sentry
+.sentryclirc

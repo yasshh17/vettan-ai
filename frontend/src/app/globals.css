@@ -1,0 +1,300 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+    
+    /* Vettan Brand Colors */
+    --brand-purple: #A78BFA;
+    --brand-indigo: #818CF8;
+  }
+  
+  .dark {
+    --background: 0 0% 5.9%;
+    --foreground: 0 0% 92.5%;
+    --card: 0 0% 10.2%;
+    --card-foreground: 0 0% 92.5%;
+    --popover: 0 0% 10.2%;
+    --popover-foreground: 0 0% 92.5%;
+    --primary: 263 70% 75%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 92.5%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 92.5%;
+    --destructive: 0 62.8% 60.6%;
+    --destructive-foreground: 0 0% 92.5%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 263 70% 75%;
+    
+    /* Vettan Brand Colors (same in dark mode) */
+    --brand-purple: #A78BFA;
+    --brand-indigo: #818CF8;
+  }
+}
+
+/* Brand gradient utility class */
+.brand-gradient-text {
+  background: linear-gradient(135deg, #818CF8 0%, #A78BFA 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Custom animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.5s ease-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 5px rgba(139, 92, 246, 0.2);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Premium shimmer effect for loading text */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(168, 85, 247, 0.8) 0%,
+    rgba(99, 102, 241, 1) 50%,
+    rgba(168, 85, 247, 0.8) 100%
+  );
+  background-size: 1000px 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes slide-in-from-top-2 {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-from-right-2 {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-from-bottom-4 {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation-duration: 300ms;
+  animation-fill-mode: both;
+}
+
+.slide-in-from-top-2 {
+  animation-name: slide-in-from-top-2;
+}
+
+.slide-in-from-right-2 {
+  animation-name: slide-in-from-right-2;
+}
+
+.slide-in-from-bottom-4 {
+  animation-name: slide-in-from-bottom-4;
+}
+
+.fade-in {
+  animation-name: fade-in;
+}
+
+.delay-200 {
+  animation-delay: 200ms;
+}
+
+.delay-400 {
+  animation-delay: 400ms;
+}
+
+.delay-500 {
+  animation-delay: 500ms;
+}
+
+.active\:scale-\[0\.98\]:active {
+  transform: scale(0.98);
+}
+
+/* Prose dark mode */
+.dark .prose {
+  --tw-prose-body: #ECECEC;
+  --tw-prose-headings: #F5F5F5;
+  --tw-prose-bold: #F5F5F5;
+  --tw-prose-links: #C084FC;
+}
+
+@media (max-width: 768px) {
+  .sticky-search-bar-spacer {
+    height: 160px;
+  }
+}
+
+/* ========================================
+   UNIFIED SEARCH BAR - 64px STANDARD
+   ======================================== */
+
+:root {
+  --search-bar-height: 64px;
+  --search-bar-padding-y: 18px;
+  --search-bar-padding-x: 20px;
+  --search-bar-font-size: 16px;
+  --search-bar-border-radius: 16px;
+  --action-btn-size: 40px;
+}
+
+/* Force consistent 64px height everywhere */
+.sticky-search-bar-container {
+  height: 64px !important;
+  min-height: 64px !important;
+}
+
+/* Mobile responsive fixes */
+@media (max-width: 1024px) {
+  /* Main content takes full width on mobile */
+  main.main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+  
+  /* Backdrop for mobile sidebar */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 999;
+  }
+  
+  .sidebar-backdrop.active {
+    display: block;
+  }
+  
+  /* Mobile menu button */
+  .mobile-menu-button {
+    display: flex;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 50;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #e5e5e5;
+    cursor: pointer;
+    transition: all 200ms;
+  }
+  
+  .mobile-menu-button:hover {
+    background: #262626;
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* Desktop - hide mobile menu button */
+@media (min-width: 1025px) {
+  .mobile-menu-button {
+    display: none !important;
+  }
+  
+  .sidebar-backdrop {
+    display: none !important;
+  }
+}
+
+/* Prevent iOS zoom on input focus */
+@media (max-width: 640px) {
+  input[type="text"],
+  textarea {
+    font-size: 16px !important;
+  }
+}

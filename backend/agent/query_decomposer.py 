@@ -1,0 +1,143 @@
+"""
+Hierarchical query decomposition for complex research
+"""
+
+from langchain_openai import ChatOpenAI
+from typing import List
+import os
+
+from research import cached_research 
+
+class QueryDecomposer:
+    """Breaks complex queries into manageable sub-questions"""
+    
+    DECOMPOSITION_PROMPT = """You are a research planning expert. Break down complex research questions into 3-5 focused sub-questions that, when answered together, provide a comprehensive response.
+
+Rules:
+- Create specific, answerable sub-questions
+- Cover different aspects (definitions, current state, implications, trends)
+- Ensure sub-questions are independent and don't overlap
+- Order from foundational to advanced
+
+Complex Query: {query}
+
+Sub-Questions (return as numbered list):"""
+    
+    def __init__(self, model: str = "gpt-4o-mini"):
+        self.llm = ChatOpenAI(
+            model=model,
+            temperature=0,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
+    
+    def decompose(self, query: str) -> List[str]:
+        """
+        Decompose complex query into sub-questions
+        
+        Returns:
+            List of 3-5 focused sub-questions
+        """
+        # Check if query is complex enough to decompose
+        if len(query.split()) < 10:
+            return [query]  # Simple query, no decomposition needed
+        
+        try:
+            response = self.llm.invoke(
+                self.DECOMPOSITION_PROMPT.format(query=query)
+            )
+            
+            # Parse numbered list
+            lines = response.content.strip().split('\n')
+            sub_queries = []
+            
+            for line in lines:
+                # Remove numbering (1. 2. etc.)
+                cleaned = line.strip()
+                if cleaned and any(char.isalpha() for char in cleaned):
+                    # Remove leading numbers and punctuation
+                    cleaned = cleaned.lstrip('0123456789.- ')
+                    if len(cleaned) > 10:  # Valid question
+                        sub_queries.append(cleaned)
+            
+            # Limit to 5 sub-queries max
+            return sub_queries[:5] if sub_queries else [query]
+            
+        except Exception as e:
+            print(f"Decomposition error: {e}")
+            return [query]  # Fallback to original query
+
+
+# Enhanced research with decomposition
+def research_complex(
+    query: str,
+    use_decomposition: bool = True,
+    **kwargs
+) -> dict:
+    """
+    Research with automatic query decomposition for complex queries
+    """
+    if not use_decomposition or len(query.split()) < 10:
+        # Simple query, use standard research
+        return cached_research(query, **kwargs)
+    
+    # Decompose into sub-questions
+    decomposer = QueryDecomposer()
+    sub_queries = decomposer.decompose(query)
+    
+    print(f"🔍 Decomposed into {len(sub_queries)} sub-queries:")
+    for i, sq in enumerate(sub_queries, 1):
+        print(f"  {i}. {sq}")
+    
+    # Research each sub-question
+    sub_results = []
+    for i, sub_q in enumerate(sub_queries, 1):
+        print(f"\n📚 Researching sub-query {i}/{len(sub_queries)}: {sub_q[:60]}...")
+        
+        result = cached_research(
+            sub_q,
+            max_iterations=8,  # Fewer iterations per sub-query
+            **kwargs
+        )
+        
+        sub_results.append({
+            'query': sub_q,
+            'report': result['output'],
+            'citations': result.get('citations', [])
+        })
+    
+    # Synthesize final comprehensive report
+    synthesis_prompt = f"""You are synthesizing research from multiple sub-questions into a comprehensive answer.
+
+Original Complex Query: {query}
+
+Sub-Research Results:
+{chr(10).join([f"### {r['query']}\n{r['report']}\n" for r in sub_results])}
+
+Task: Synthesize these sub-research results into a single, comprehensive, well-structured report that directly answers the original query. Maintain all citations and ensure logical flow."""
+    
+    llm = ChatOpenAI(model="gpt-4o", temperature=0)  # Use GPT-4o for synthesis
+    synthesis = llm.invoke(synthesis_prompt)
+    
+    # Combine all citations
+    all_citations = []
+    for r in sub_results:
+        all_citations.extend(r['citations'])
+    
+    # Deduplicate citations
+    unique_citations = []
+    seen_urls = set()
+    for cite in all_citations:
+        if cite['url'] not in seen_urls:
+            seen_urls.add(cite['url'])
+            unique_citations.append(cite)
+    
+    return {
+        'output': synthesis.content,
+        'citations': unique_citations,
+        'metadata': {
+            'decomposed': True,
+            'sub_queries': len(sub_queries),
+            'total_sources': len(unique_citations),
+            'model': 'gpt-4o (synthesis)'
+        }
+    }
