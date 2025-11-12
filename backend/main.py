@@ -583,4 +583,5 @@ if __name__ == "__main__":
     logger.info("="*60)
     logger.info("🚀 VETTAN AI BACKEND v5.0.0 STARTING")
     logger.info("="*60)
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
