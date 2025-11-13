@@ -24,8 +24,7 @@ lxml==5.1.0
 tiktoken==0.7.0
 
 # Database
-supabase==2.9.0
-postgrest==0.10.8
+supabase==2.22.0
 websockets>=13.0
 
 # Rate limiting
