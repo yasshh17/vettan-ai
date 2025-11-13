@@ -1030,15 +1030,13 @@ Special thanks to the open-source AI/ML community for advancing the field and ma
 
 **Developer:** Yash Tambakhe
 
-**GitHub:** [@YOUR_USERNAME](https://github.com/yasshh17)
+[![GitHub](https://img.shields.io/badge/GitHub-yasshh17-181717?style=for-the-badge&logo=github)](https://github.com/yasshh17)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Yash_Tambakhe-0077B5?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/yash-tambakhe/)
+[![Email](https://img.shields.io/badge/Email-yashtambakhe@gmail.com-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:yashtambakhe@gmail.com)
 
-**LinkedIn:** [linkedin.com/in/your-profile](https://www.linkedin.com/in/yash-tambakhe/)
-
-**Email:** yashtambakhe@gmail.com
-
-**Project Repository:** [github.com/yasshh17/vettan-ai](https://github.com/yasshh17/vettan-ai)
-
-**Live Application:** [vettan-ai.vercel.app](https://vettan-ai.vercel.app)
+**🔗 Links:**
+- **Live Demo:** [vettan-ai.vercel.app](https://vettan-ai.vercel.app)
+- **Source Code:** [github.com/yasshh17/vettan-ai](https://github.com/yasshh17/vettan-ai)
 
 ---
 
