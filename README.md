@@ -40,7 +40,7 @@
 
 ## Overview
 
-**Vettan AI** is a production-ready autonomous research platform that synthesizes information from multiple web sources using advanced AI agents. Built for enterprises and professionals requiring accurate, verifiable, and comprehensively cited research.
+**Vettan** is a production-ready autonomous research platform that synthesizes information from multiple web sources using advanced AI agents. Built for enterprises and professionals requiring accurate, verifiable, and comprehensively cited research.
 
 ### The Problem
 
