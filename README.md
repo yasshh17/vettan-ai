@@ -80,7 +80,7 @@ Vettan implements a **ReAct (Reasoning + Acting) agent pattern** with LangChain 
 - **Query decomposition** - Breaks complex queries into focused sub-questions
 
 ### **Enterprise-Grade Interface**
-- **ChatGPT-quality UI** - Premium animations, cascade effects, micro-interactions
+- **Quality UI** - Premium animations, cascade effects, micro-interactions
 - **64px search consistency** - Professional input sizing across all application views
 - **WCAG AAA compliance** - 98 Lighthouse accessibility score with focus indicators
 - **Dark mode optimized** - Carefully crafted contrast ratios and visual hierarchy
