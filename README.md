@@ -343,7 +343,7 @@ pnpm >= 8.0.0  # Faster than npm
 ### Quick Start (10 minutes)
 ```bash
 # 1. Clone repository
-git clone https://github.com/YOUR_USERNAME/vettan-ai.git
+git clone https://github.com/yasshh17/vettan-ai.git
 cd vettan-ai
 
 # 2. Backend setup
@@ -588,7 +588,7 @@ await fetch(`http://localhost:8000/api/history/${sessionId}`, {
 
 ---
 
-## 🔌 API Documentation
+## API Documentation
 
 ### Core Endpoints
 
