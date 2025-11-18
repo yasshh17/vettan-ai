@@ -211,8 +211,7 @@ vettan-ai/
     ├── main.py                  # FastAPI application entry
     ├── requirements.txt         # Python dependencies
     ├── runtime.txt              # Python version for deployment
-    ├── Procfile                 # Railway deployment config
-    └── railway.json             # Railway configuration
+    ├── Procfile                 # Render deployment config
 ```
 
 ### Data Flow
@@ -295,7 +294,7 @@ vettan-ai/
   "database_client": "supabase-py",
   "validation": "Pydantic 2.0",
   "environment": "python-dotenv",
-  "deployment": "Railway (managed Python hosting)"
+  "deployment": "Render (managed Python hosting)"
 }
 ```
 
@@ -813,7 +812,7 @@ npx vercel --prod
 
 # Environment Variables (set in Vercel dashboard):
 # Settings → Environment Variables → Add:
-NEXT_PUBLIC_API_URL=https://your-backend.up.railway.app
+NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
 ```
 
 **Configuration:**
@@ -827,19 +826,21 @@ NEXT_PUBLIC_API_URL=https://your-backend.up.railway.app
 
 ---
 
-#### **2. Backend Deployment (Railway)**
+#### **2. Backend Deployment (Render)**
 ```bash
 # Automatic via GitHub integration
-# Configured with railway.json
 
 # Manual setup:
-# 1. Connect GitHub repo at railway.app
+# 1. Connect GitHub repo at render.com
 # 2. Select "vettan-ai" repository
 # 3. Root Directory: backend
-# 4. Railway auto-detects Python
+# 4. Language: Python 3
+# 5. Branch: main
+# 6. Build Command: pip install -r requirements.txt
+# 7. Start Command: gunicorn main:app --bind 0.0.0.0:$PORT
 ```
 
-**Environment Variables (Railway dashboard):**
+**Environment Variables (Render dashboard):**
 ```bash
 OPENAI_API_KEY=sk-proj-...
 TAVILY_API_KEY=tvly-...
@@ -861,22 +862,7 @@ web: uvicorn main:app --host 0.0.0.0 --port $PORT
 python-3.11
 ```
 
-`railway.json`:
-```json
-{
-  "$schema": "https://railway.app/railway.schema.json",
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
-    "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
-  }
-}
-```
-
-**Live API:** `https://vettan-backend-production.up.railway.app`
+**Live API:** `https://vettan-ai.onrender.com`
 
 ---
 
@@ -899,7 +885,7 @@ python-3.11
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # Production (set in Vercel)
-NEXT_PUBLIC_API_URL=https://vettan-backend-production.up.railway.app
+NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
 ```
 
 **Backend (`.env`):**
@@ -917,7 +903,7 @@ SUPABASE_KEY=your-anon-or-service-key
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 ### Completed (v1.0 - Current)
 - [x] Multi-turn conversational AI with full context preservation
@@ -1020,7 +1006,8 @@ Built with exceptional open-source tools and services:
 
 ### Infrastructure & Deployment
 - [Vercel](https://vercel.com/) - Frontend Hosting & CDN
-- [Railway](https://railway.app/) - Backend Hosting & Database
+- [Railway](https://render.com/) - Backend Hosting 
+- [Supabase](https://supabase.com) - Database & Authentication
 
 Special thanks to the open-source AI/ML community for advancing the field and making sophisticated research tools accessible.
 
