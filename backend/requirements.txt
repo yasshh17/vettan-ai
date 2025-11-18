@@ -21,7 +21,8 @@ requests==2.31.0
 lxml==5.1.0
 
 # Token tracking
-tiktoken==0.7.0
+tiktoken==0.8.0
+
 
 # Database
 supabase==2.9.0
