@@ -257,7 +257,7 @@ vettan-ai/
 | **LangChain ReAct Agent** | Pre-built agent patterns, tool integration, active community | Abstraction layer complexity |
 | **SWR for caching** | Stale-while-revalidate pattern, automatic revalidation | vs TanStack Query or RTK Query |
 | **shadcn/ui** | Customizable components, TypeScript native, Tailwind-based | Build own vs pre-made library |
-| **Vercel + Railway** | Zero-config deployment, global CDN, managed infrastructure | Vendor lock-in vs AWS flexibility |
+| **Vercel + Render** | Zero-config deployment, global CDN, managed infrastructure | Vendor lock-in vs AWS flexibility |
 
 ---
 
