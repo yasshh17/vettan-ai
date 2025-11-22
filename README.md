@@ -316,7 +316,7 @@ vettan-ai/
 ### Infrastructure & Services
 
 - **Frontend Hosting:** Vercel (Next.js optimized, 150+ edge locations)
-- **Backend Hosting:** Railway (Python/FastAPI auto-scaling)
+- **Backend Hosting:** Render (Python/FastAPI with persistent containers)
 - **Database:** Supabase (Managed PostgreSQL with real-time)
 - **CDN:** Vercel Edge Network (global distribution)
 - **AI Provider:** OpenAI (GPT-4o-mini + TTS)
