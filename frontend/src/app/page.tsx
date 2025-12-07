@@ -11,6 +11,8 @@ import { StatsPanel } from "@/components/research/stats-panel"
 import { ActiveChatHeader } from "@/components/research/active-chat-header"
 import { ChevronUp } from "lucide-react"
 import axios from "axios"
+import ReactMarkdown from 'react-markdown'
+import rehypeRaw from 'rehype-raw'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -318,61 +320,10 @@ export default function Home() {
                         <div className="mb-10">
                           <Card className="shadow-2xl border-neutral-800 bg-neutral-900/95">
                             <CardContent className="pt-7 pb-6 px-7">
-                              <div className="space-y-4 text-neutral-200 text-[15px] leading-[1.8]">
-                                {message.content.split("\n").map((line, i) => {
-                                  const trimmed = line.trim()
-
-                                  if (!trimmed) return <div key={i} className="h-3" />
-
-                                  if (trimmed.startsWith("###")) {
-                                    return (
-                                      <h3 key={i} className="text-xl font-bold text-neutral-50 mt-8 mb-4 first:mt-0">
-                                        {trimmed.replace(/^###\s*/, "")}
-                                      </h3>
-                                    )
-                                  }
-
-                                  if (trimmed.match(/^\d+\.\s+\*\*/) || trimmed.match(/^[-*]\s+\*\*/)) {
-                                    const content = trimmed.replace(/^\d+\.\s*/, "").replace(/^[-*]\s*/, "")
-                                    const parts = content.split("**")
-                                    return (
-                                      <p key={i} className="text-neutral-200 mb-3 pl-4">
-                                        {parts.map((part, j) =>
-                                          j % 2 === 0 ? (
-                                            part
-                                          ) : (
-                                            <strong key={j} className="text-neutral-50 font-semibold">
-                                              {part}
-                                            </strong>
-                                          )
-                                        )}
-                                      </p>
-                                    )
-                                  }
-
-                                  if (trimmed.includes("**")) {
-                                    const parts = trimmed.split("**")
-                                    return (
-                                      <p key={i} className="text-neutral-200 mb-4">
-                                        {parts.map((part, j) =>
-                                          j % 2 === 0 ? (
-                                            part
-                                          ) : (
-                                            <strong key={j} className="text-neutral-50 font-semibold">
-                                              {part}
-                                            </strong>
-                                          )
-                                        )}
-                                      </p>
-                                    )
-                                  }
-
-                                  return (
-                                    <p key={i} className="text-neutral-200 mb-4">
-                                      {trimmed}
-                                    </p>
-                                  )
-                                })}
+                              <div className="prose prose-invert max-w-none prose-p:text-neutral-200 prose-headings:text-neutral-50 prose-a:text-indigo-400">
+                                <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                                  {message.content}
+                                </ReactMarkdown>
                               </div>
 
                               {message.citations && message.citations.length > 0 && (
