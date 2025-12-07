@@ -143,62 +143,29 @@ async def research(request: ResearchRequest):
                 logger.error(f"❌ No history found for session: {request.session_id[:8]}")
                 raise HTTPException(status_code=404, detail="Conversation not found")
             
-            logger.info(f"✅ Loaded {len(conversation_history)} messages")
+            # Format history as a context string for the agent
+            context_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-6:]])
             
-            # Log each message for debugging
-            for i, msg in enumerate(conversation_history, 1):
-                logger.info(f"  📝 Message {i} ({msg['role']}): {msg['content'][:50]}...")
+            # Augment query with context
+            augmented_query = f"Context:\n{context_str}\n\nNew Question: {request.query}"
             
-            # STEP 3: Build context for AI (exclude current question)
-            previous_messages = conversation_history[:-1]
+            logger.info(f"🧠 Context prepared with {len(conversation_history[-6:])} recent messages")
             
-            logger.info(f"🧠 Building AI context from {len(previous_messages)} previous messages")
+            # CALL RESEARCH AGENT instead of simple Chat
+            # Use os.getenv for model to fix hardcoding (Fix #6)
+            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
             
-            # STEP 4: Use OpenAI Chat (NOT research) for follow-ups
-            try:
-                from openai import OpenAI
-                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-                
-                # Build message array for OpenAI
-                messages_for_ai = []
-                
-                # Add system message for context
-                messages_for_ai.append({
-                    "role": "system",
-                    "content": "You are Vettan AI, a research assistant. Answer follow-up questions based on the conversation context. Be direct and reference previous research when relevant."
-                })
-                
-                # Add recent conversation history (last 6 messages = 3 Q&A pairs)
-                for msg in previous_messages[-6:]:
-                    messages_for_ai.append({
-                        "role": msg['role'],
-                        "content": msg['content'][:3000]  # Truncate if needed
-                    })
-                
-                # Add current question
-                messages_for_ai.append({
-                    "role": "user",
-                    "content": request.query
-                })
-                
-                logger.info(f"💬 Sending {len(messages_for_ai)} messages to OpenAI GPT-4")
-                
-                # Generate response with full context
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages_for_ai,
-                    temperature=0.7,
-                    max_tokens=2000
-                )
-                
-                ai_content = response.choices[0].message.content
-                tokens_used = response.usage.total_tokens
-                
-                logger.info(f"✅ AI response generated: {len(ai_content)} chars, {tokens_used} tokens")
-                
-            except Exception as openai_error:
-                logger.error(f"❌ OpenAI API error: {openai_error}")
-                raise HTTPException(status_code=500, detail=f"AI generation failed: {str(openai_error)}")
+            result = cached_research(
+                augmented_query,
+                max_iterations=request.max_iterations,
+                use_cache=False, # Don't cache context-heavy queries
+                save_to_db=False, # We handle saving manually below
+                model=model
+            )
+            
+            ai_content = result['output']
+            citations = result.get('citations', [])
+            metadata = result.get('metadata', {})
             
             # STEP 5: Save AI response
             logger.info("💾 Saving AI response...")
@@ -206,12 +173,10 @@ async def research(request: ResearchRequest):
                 session_id=request.session_id,
                 role='assistant',
                 content=ai_content,
-                citations=[],
+                citations=citations,
                 metadata={
-                    'model': 'gpt-4o-mini',
-                    'tokens': tokens_used,
-                    'is_followup': True,
-                    'context_messages': len(messages_for_ai)
+                    **metadata,
+                    'is_followup': True
                 }
             )
             
@@ -223,11 +188,6 @@ async def research(request: ResearchRequest):
             # STEP 6: Get COMPLETE conversation thread
             logger.info("📖 Fetching complete conversation thread...")
             all_messages = db.get_conversation_history(request.session_id)
-            
-            logger.info(f"✅ Thread has {len(all_messages)} total messages")
-            logger.info("📋 Complete thread:")
-            for i, msg in enumerate(all_messages, 1):
-                logger.info(f"  {i}. {msg['role']}: {msg['content'][:60]}...")
             
             # STEP 7: Format for frontend
             formatted_messages = [
@@ -248,10 +208,9 @@ async def research(request: ResearchRequest):
             
             return ResearchResponse(
                 output=ai_content,
-                citations=[],
+                citations=citations,
                 metadata={
-                    'model': 'gpt-4o-mini',
-                    'tokens': tokens_used,
+                    **metadata,
                     'is_followup': True,
                     'message_count': len(formatted_messages)
                 },

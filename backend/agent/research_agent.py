@@ -9,10 +9,23 @@ from typing import Dict, List, Optional, Any
 import os
 from dotenv import load_dotenv
 
-from tools.search import search_web, search_tool_instance
-from tools.scraper import scrape_webpage, scraper_instance
+from tools.search import search_web
+from tools.scraper import scrape_webpage
 from utils.token_tracker import get_tracker
 from utils.citation_extractor import CitationExtractor
+from langchain.callbacks.base import BaseCallbackHandler
+
+class TokenAndToolHandler(BaseCallbackHandler):
+    def __init__(self):
+        self.search_count = 0
+        self.scrape_count = 0
+        self.tokens = 0
+        
+    def on_tool_start(self, serialized, input_str, **kwargs):
+        if serialized.get("name") == "search_web":
+            self.search_count += 1
+        elif serialized.get("name") == "scrape_webpage":
+            self.scrape_count += 1
 
 load_dotenv()
 
@@ -75,9 +88,14 @@ Thought: {agent_scratchpad}"""
         callbacks: Optional[List] = None
     ) -> Dict[str, Any]:
         """Execute research with fallback synthesis"""
-        search_tool_instance.search_count = 0
-        scraper_instance.scrape_count = 0
+        # Create a fresh handler for THIS request
+        stats_handler = TokenAndToolHandler()
         
+        # Combine with existing callbacks
+        request_callbacks = [stats_handler]
+        if callbacks:
+            request_callbacks.extend(callbacks)
+
         executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,
@@ -86,7 +104,7 @@ Thought: {agent_scratchpad}"""
             max_execution_time=180,
             handle_parsing_errors=True,
             return_intermediate_steps=True,
-            callbacks=callbacks
+            callbacks=request_callbacks
         )
         
         try:
@@ -109,8 +127,8 @@ Thought: {agent_scratchpad}"""
                 'citations': citations,
                 'metadata': {
                     'iterations': len(intermediate_steps),
-                    'searches': search_tool_instance.search_count,
-                    'scrapes': scraper_instance.scrape_count,
+                    'searches': stats_handler.search_count,
+                    'scrapes': stats_handler.scrape_count,
                     'tokens': cost_data['total_tokens'],
                     'estimated_cost': cost_data['total_cost'],
                     'model': self.model,
