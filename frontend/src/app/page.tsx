@@ -320,7 +320,16 @@ export default function Home() {
                         <div className="mb-10">
                           <Card className="shadow-2xl border-neutral-800 bg-neutral-900/95">
                             <CardContent className="pt-7 pb-6 px-7">
-                              <div className="prose prose-invert max-w-none prose-p:text-neutral-200 prose-headings:text-neutral-50 prose-a:text-indigo-400">
+                              <div className="prose prose-invert max-w-none 
+                                prose-p:text-neutral-300 prose-p:leading-relaxed 
+                                prose-headings:text-neutral-50 prose-headings:font-semibold 
+                                prose-a:text-indigo-400 prose-a:no-underline hover:prose-a:text-indigo-300
+                                prose-strong:text-neutral-100 prose-strong:font-bold
+                                prose-ul:text-neutral-300 prose-ol:text-neutral-300
+                                prose-li:marker:text-neutral-400
+                                prose-code:text-indigo-300 prose-code:bg-neutral-800/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
+                                prose-pre:bg-neutral-900/50 prose-pre:border prose-pre:border-neutral-800
+                                prose-blockquote:border-l-indigo-500 prose-blockquote:text-neutral-400">
                                 <ReactMarkdown rehypePlugins={[rehypeRaw]}>
                                   {message.content}
                                 </ReactMarkdown>
