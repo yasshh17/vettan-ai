@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -22,12 +23,12 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
-    
+
     /* Vettan Brand Colors */
     --brand-purple: #A78BFA;
     --brand-indigo: #818CF8;
   }
-  
+
   .dark {
     --background: 0 0% 5.9%;
     --foreground: 0 0% 92.5%;
@@ -48,7 +49,7 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 263 70% 75%;
-    
+
     /* Vettan Brand Colors (same in dark mode) */
     --brand-purple: #A78BFA;
     --brand-indigo: #818CF8;
@@ -69,6 +70,7 @@
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -84,6 +86,7 @@
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -95,9 +98,12 @@
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
   }
+
   50% {
     box-shadow: 0 0 20px 5px rgba(139, 92, 246, 0.2);
   }
@@ -112,18 +118,17 @@
   0% {
     background-position: -1000px 0;
   }
+
   100% {
     background-position: 1000px 0;
   }
 }
 
 .animate-shimmer {
-  background: linear-gradient(
-    90deg,
-    rgba(168, 85, 247, 0.8) 0%,
-    rgba(99, 102, 241, 1) 50%,
-    rgba(168, 85, 247, 0.8) 100%
-  );
+  background: linear-gradient(90deg,
+      rgba(168, 85, 247, 0.8) 0%,
+      rgba(99, 102, 241, 1) 50%,
+      rgba(168, 85, 247, 0.8) 100%);
   background-size: 1000px 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -135,6 +140,7 @@
     opacity: 0;
     transform: translateY(-8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -146,6 +152,7 @@
     opacity: 0;
     transform: translateX(16px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -157,6 +164,7 @@
     opacity: 0;
     transform: translateY(16px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -235,12 +243,13 @@
 
 /* Mobile responsive fixes */
 @media (max-width: 1024px) {
+
   /* Main content takes full width on mobile */
   main.main-content {
     margin-left: 0 !important;
     width: 100% !important;
   }
-  
+
   /* Backdrop for mobile sidebar */
   .sidebar-backdrop {
     display: none;
@@ -250,11 +259,11 @@
     backdrop-filter: blur(2px);
     z-index: 999;
   }
-  
+
   .sidebar-backdrop.active {
     display: block;
   }
-  
+
   /* Mobile menu button */
   .mobile-menu-button {
     display: flex;
@@ -273,7 +282,7 @@
     cursor: pointer;
     transition: all 200ms;
   }
-  
+
   .mobile-menu-button:hover {
     background: #262626;
     border-color: rgba(255, 255, 255, 0.15);
@@ -285,7 +294,7 @@
   .mobile-menu-button {
     display: none !important;
   }
-  
+
   .sidebar-backdrop {
     display: none !important;
   }
@@ -293,6 +302,7 @@
 
 /* Prevent iOS zoom on input focus */
 @media (max-width: 640px) {
+
   input[type="text"],
   textarea {
     font-size: 16px !important;

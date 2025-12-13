@@ -321,16 +321,18 @@ export default function Home() {
                           <Card className="shadow-2xl border-neutral-800 bg-neutral-900/95">
                             <CardContent className="pt-7 pb-6 px-7">
                               <div className="prose prose-invert max-w-none 
-                                prose-p:text-neutral-100 prose-p:leading-relaxed prose-p:text-[1.05rem]
-                                prose-headings:text-white prose-headings:font-bold prose-headings:tracking-tight
-                                prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl
-                                prose-a:text-indigo-400 prose-a:no-underline hover:prose-a:text-indigo-300 hover:prose-a:underline
-                                prose-strong:text-white prose-strong:font-bold
-                                prose-ul:text-neutral-100 prose-ol:text-neutral-100
-                                prose-li:marker:text-neutral-400
-                                prose-code:text-indigo-300 prose-code:bg-neutral-800/80 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
-                                prose-pre:bg-neutral-900 prose-pre:border prose-pre:border-neutral-800 prose-pre:p-4 prose-pre:rounded-xl
-                                prose-blockquote:border-l-indigo-500 prose-blockquote:text-neutral-300 prose-blockquote:pl-4 prose-blockquote:italic
+                                !text-gray-100
+                                [&_p]:!text-gray-200 [&_p]:leading-relaxed [&_p]:text-[1.05rem]
+                                [&_h1]:!text-white [&_h1]:font-bold [&_h1]:text-3xl
+                                [&_h2]:!text-white [&_h2]:font-bold [&_h2]:text-2xl
+                                [&_h3]:!text-white [&_h3]:font-bold [&_h3]:text-xl
+                                [&_a]:!text-indigo-400 [&_a]:no-underline hover:[&_a]:!text-indigo-300 hover:[&_a]:underline
+                                [&_strong]:!text-white [&_strong]:font-bold
+                                [&_ul]:!text-gray-200 [&_ol]:!text-gray-200
+                                [&_li]:!text-gray-200 [&_li]:marker:!text-gray-500
+                                [&_code]:!text-indigo-300 [&_code]:bg-neutral-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:before:content-none [&_code]:after:content-none
+                                [&_pre]:bg-neutral-900 [&_pre]:border [&_pre]:border-neutral-800 [&_pre]:p-4 [&_pre]:rounded-xl
+                                [&_blockquote]:border-l-4 [&_blockquote]:!border-indigo-500 [&_blockquote]:!text-gray-300 [&_blockquote]:pl-4 [&_blockquote]:italic
                                 ">
                                 <ReactMarkdown rehypePlugins={[rehypeRaw]}>
                                   {message.content}
