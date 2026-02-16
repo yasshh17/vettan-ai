@@ -20,6 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from agent.cached_research_agent import cached_research
+from agent.research_pipeline import research_complete, handle_followup
 from database.supabase_client_v2 import get_database_v2
 from audio.tts import get_tts
 
@@ -153,14 +154,9 @@ async def research(request: ResearchRequest):
             
             # CALL RESEARCH AGENT instead of simple Chat
             # Use os.getenv for model to fix hardcoding (Fix #6)
-            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-            
-            result = cached_research(
-                augmented_query,
-                max_iterations=request.max_iterations,
-                use_cache=False, # Don't cache context-heavy queries
-                save_to_db=False, # We handle saving manually below
-                model=model
+            result = await handle_followup(
+                query=request.query,
+                conversation_history=conversation_history
             )
             
             ai_content = result['output']
@@ -223,12 +219,49 @@ async def research(request: ResearchRequest):
         # ============================================
         logger.info(f"🆕 NEW conversation: {request.query[:100]}")
         
-        result = cached_research(
-            request.query,
-            max_iterations=request.max_iterations,
-            use_cache=request.use_cache,
-            save_to_db=True
-        )
+        # Check cache first
+        cached_result = None
+        if db and request.use_cache:
+            try:
+                cached_result = db.check_cache(request.query)
+                if cached_result:
+                    report = cached_result.get('report', '')
+                    if report and len(report) > 100 and 'stopped due to' not in report.lower():
+                        logger.info("CACHE HIT - Valid result")
+                        result = {
+                            'output': report,
+                            'citations': cached_result.get('citations', []),
+                            'metadata': {
+                                **cached_result.get('metadata', {}),
+                                'from_cache': True,
+                                'session_id': cached_result.get('id')
+                            }
+                        }
+                    else:
+                        cached_result = None
+            except Exception as e:
+                logger.warning(f"Cache check failed: {e}")
+        
+        # Cache miss — run new parallel pipeline
+        if not cached_result:
+            result = await research_complete(request.query)
+            
+            # Save to database (creates session)
+            output = result.get('output', '')
+            if db and db.is_connected and len(output) > 100:
+                try:
+                    new_session_id = db.save_session(
+                        query=request.query,
+                        report=output,
+                        citations=result.get('citations', []),
+                        metadata=result.get('metadata', {})
+                    )
+                    if new_session_id:
+                        result['metadata']['session_id'] = new_session_id
+                        result['metadata']['saved_to_db'] = True
+                        logger.info(f"Saved: {new_session_id[:8]}")
+                except Exception as e:
+                    logger.warning(f"Save failed: {e}")
         
         session_id = result.get('metadata', {}).get('session_id', 'unknown')
         
