@@ -59,7 +59,7 @@ Thought: {agent_scratchpad}"""
         self,
         model: str = "gpt-4o-mini",
         temperature: float = 0,
-        max_iterations: int = 25
+        max_iterations: int = 6
     ):
         """Initialize agent"""
         self.model = model
@@ -101,7 +101,7 @@ Thought: {agent_scratchpad}"""
             tools=self.tools,
             verbose=True,
             max_iterations=self.max_iterations,
-            max_execution_time=180,
+            max_execution_time=30,
             handle_parsing_errors=True,
             return_intermediate_steps=True,
             callbacks=request_callbacks
@@ -192,7 +192,7 @@ Task: Synthesize this information into a clear, comprehensive answer with citati
 _agent_instance = None
 
 
-def get_agent(model: str = "gpt-4o-mini", max_iterations: int = 25) -> ResearchAgent:
+def get_agent(model: str = "gpt-4o-mini", max_iterations: int = 6) -> ResearchAgent:
     """Get agent instance"""
     global _agent_instance
     if _agent_instance is None:

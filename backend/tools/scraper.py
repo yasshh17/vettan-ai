@@ -19,7 +19,7 @@ class WebScraper:
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
         })
     
-    def scrape(self, url: str, max_words: int = 2000) -> str:
+    def scrape(self, url: str, max_words: int = 800) -> str:
         """Scrape webpage content"""
         try:
             self.scrape_count += 1
@@ -29,7 +29,7 @@ class WebScraper:
             
             print(f"🌐 Scraping: {url[:80]}...")
             
-            time.sleep(1)
+            # Removed: artificial 1s delay was adding 5-15s total per research query
             
             response = self.session.get(url, timeout=10)
             response.raise_for_status()

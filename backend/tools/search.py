@@ -26,7 +26,7 @@ class SearchTool:
         self.client = TavilyClient(api_key=self.api_key)
         self.search_count = 0
     
-    def search(self, query: str, max_results: int = 10) -> str:
+    def search(self, query: str, max_results: int = 5) -> str:
         """
         Search the web using Tavily AI
         
@@ -44,7 +44,7 @@ class SearchTool:
             results = self.client.search(
                 query=query,
                 max_results=max_results,
-                search_depth="advanced",  # More comprehensive results
+                search_depth="basic",  # basic is faster; advanced adds 1-3s per call
                 include_domains=[],  # No restrictions
                 exclude_domains=[]
             )

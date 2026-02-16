@@ -45,7 +45,7 @@ app.add_middleware(
 
 class ResearchRequest(BaseModel):
     query: str
-    max_iterations: int = 25
+    max_iterations: int = 8
     use_cache: bool = True
     session_id: Optional[str] = None
     is_followup: bool = False
