@@ -40,16 +40,16 @@ class SearchTool:
         try:
             self.search_count += 1
             
-            # Perform search
+            
             results = self.client.search(
                 query=query,
                 max_results=max_results,
-                search_depth="basic",  # basic is faster; advanced adds 1-3s per call
-                include_domains=[],  # No restrictions
+                search_depth="basic",  
+                include_domains=[],  
                 exclude_domains=[]
             )
             
-            # Format results for LLM consumption
+            
             formatted_results = []
             
             if results and isinstance(results, dict):
@@ -73,7 +73,7 @@ class SearchTool:
         return self.search_count
 
 
-# Create tool instance
+
 search_tool_instance = SearchTool()
 
 
@@ -95,5 +95,5 @@ def search_web(query: str) -> str:
     return search_tool_instance.search(query)
 
 
-# Export for use in agent
+
 __all__ = ['search_web', 'SearchTool', 'search_tool_instance']

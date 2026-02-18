@@ -108,22 +108,22 @@ async def research(request: ResearchRequest):
         db = get_database_v2()
         
         logger.info("="*60)
-        logger.info(f"📥 REQUEST: {request.query[:80]}")
-        logger.info(f"📍 Session: {request.session_id[:8] if request.session_id else 'NEW'}")
-        logger.info(f"🔄 Follow-up: {request.is_followup}")
+        logger.info(f"REQUEST: {request.query[:80]}")
+        logger.info(f"Session: {request.session_id[:8] if request.session_id else 'NEW'}")
+        logger.info(f"Follow-up: {request.is_followup}")
         logger.info("="*60)
         
         # ============================================
         # FOLLOW-UP QUERY HANDLING
         # ============================================
         if request.session_id and request.is_followup:
-            logger.info(f"🔄 Processing follow-up in session: {request.session_id[:8]}")
+            logger.info(f"Processing follow-up in session: {request.session_id[:8]}")
             
             if not db or not db.is_connected:
                 raise HTTPException(status_code=503, detail="Database required for follow-ups")
             
             # STEP 1: Save user question
-            logger.info(f"💾 Saving user message...")
+            logger.info(f"Saving user message...")
             user_msg_id = db.add_message(
                 session_id=request.session_id,
                 role='user',
@@ -131,17 +131,17 @@ async def research(request: ResearchRequest):
             )
             
             if not user_msg_id:
-                logger.error("❌ Failed to save user message!")
+                logger.error("Failed to save user message!")
                 raise HTTPException(status_code=500, detail="Failed to save message")
             
-            logger.info(f"✅ User message saved: {user_msg_id[:8]}")
+            logger.info(f"User message saved: {user_msg_id[:8]}")
             
             # STEP 2: Get conversation history FOR CONTEXT
-            logger.info(f"📚 Loading conversation history...")
+            logger.info(f"Loading conversation history...")
             conversation_history = db.get_conversation_history(request.session_id)
             
             if not conversation_history:
-                logger.error(f"❌ No history found for session: {request.session_id[:8]}")
+                logger.error(f"No history found for session: {request.session_id[:8]}")
                 raise HTTPException(status_code=404, detail="Conversation not found")
             
             # Format history as a context string for the agent
@@ -150,7 +150,7 @@ async def research(request: ResearchRequest):
             # Augment query with context
             augmented_query = f"Context:\n{context_str}\n\nNew Question: {request.query}"
             
-            logger.info(f"🧠 Context prepared with {len(conversation_history[-6:])} recent messages")
+            logger.info(f"Context prepared with {len(conversation_history[-6:])} recent messages")
             
             # CALL RESEARCH AGENT instead of simple Chat
             # Use os.getenv for model to fix hardcoding (Fix #6)
@@ -177,12 +177,12 @@ async def research(request: ResearchRequest):
             )
             
             if not assistant_msg_id:
-                logger.error("❌ Failed to save assistant message!")
+                logger.error("Failed to save assistant message!")
             else:
-                logger.info(f"✅ Assistant message saved: {assistant_msg_id[:8]}")
+                logger.info(f"Assistant message saved: {assistant_msg_id[:8]}")
             
             # STEP 6: Get COMPLETE conversation thread
-            logger.info("📖 Fetching complete conversation thread...")
+            logger.info("Fetching complete conversation thread...")
             all_messages = db.get_conversation_history(request.session_id)
             
             # STEP 7: Format for frontend
@@ -199,7 +199,7 @@ async def research(request: ResearchRequest):
             ]
             
             logger.info("="*60)
-            logger.info(f"✅ FOLLOW-UP COMPLETE: Returning {len(formatted_messages)} messages")
+            logger.info(f"FOLLOW-UP COMPLETE: Returning {len(formatted_messages)} messages")
             logger.info("="*60)
             
             return ResearchResponse(
@@ -217,7 +217,7 @@ async def research(request: ResearchRequest):
         # ============================================
         # NEW CONVERSATION
         # ============================================
-        logger.info(f"🆕 NEW conversation: {request.query[:100]}")
+        logger.info(f"NEW conversation: {request.query[:100]}")
         
         # Check cache first
         cached_result = None
@@ -266,15 +266,15 @@ async def research(request: ResearchRequest):
         session_id = result.get('metadata', {}).get('session_id', 'unknown')
         
         if session_id == 'unknown':
-            logger.error("❌ No session ID returned from research!")
+            logger.error("No session ID returned from research!")
             raise HTTPException(status_code=500, detail="Failed to create session")
         
-        logger.info(f"✅ Session created: {session_id[:8]}")
+        logger.info(f"Session created: {session_id[:8]}")
         
         # Get initial messages (should be 2)
         if db and db.is_connected:
             all_messages = db.get_conversation_history(session_id)
-            logger.info(f"📖 Loaded {len(all_messages)} initial messages")
+            logger.info(f"Loaded {len(all_messages)} initial messages")
             
             formatted_messages = [
                 Message(
@@ -288,7 +288,7 @@ async def research(request: ResearchRequest):
                 for msg in all_messages
             ]
         else:
-            logger.warning("⚠️ Database unavailable, using fallback")
+            logger.warning("Database unavailable, using fallback")
             formatted_messages = [
                 Message(
                     id='temp-user',
@@ -307,7 +307,7 @@ async def research(request: ResearchRequest):
             ]
         
         logger.info("="*60)
-        logger.info(f"✅ NEW CONVERSATION COMPLETE: {len(formatted_messages)} messages")
+        logger.info(f"NEW CONVERSATION COMPLETE: {len(formatted_messages)} messages")
         logger.info("="*60)
         
         return ResearchResponse(
@@ -321,7 +321,7 @@ async def research(request: ResearchRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ CRITICAL ERROR: {e}")
+        logger.error(f"CRITICAL ERROR: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -330,7 +330,7 @@ async def research(request: ResearchRequest):
 async def get_session_messages(session_id: str):
     """Get all messages in conversation thread"""
     try:
-        logger.info(f"💬 Fetching messages for session: {session_id[:8]}")
+        logger.info(f"Fetching messages for session: {session_id[:8]}")
         
         db = get_database_v2()
         if not db or not db.is_connected:
@@ -339,10 +339,10 @@ async def get_session_messages(session_id: str):
         messages = db.get_conversation_history(session_id)
         
         if not messages:
-            logger.warning(f"⚠️ No messages found for: {session_id[:8]}")
+            logger.warning(f"No messages found for: {session_id[:8]}")
             return {"session_id": session_id, "messages": [], "count": 0}
         
-        logger.info(f"✅ Found {len(messages)} messages")
+        logger.info(f"Found {len(messages)} messages")
         
         formatted_messages = [
             {
@@ -365,7 +365,7 @@ async def get_session_messages(session_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Message fetch failed: {e}")
+        logger.error(f"Message fetch failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/audio")
@@ -388,7 +388,7 @@ async def generate_audio(request: AudioRequest):
         audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
         cost = tts.estimate_cost(speech_text)
         
-        logger.info(f"✅ Audio generated: {len(audio_bytes)} bytes")
+        logger.info(f"Audio generated: {len(audio_bytes)} bytes")
         
         return {
             "audio": audio_b64,
@@ -399,7 +399,7 @@ async def generate_audio(request: AudioRequest):
         }
         
     except Exception as e:
-        logger.error(f"❌ Audio generation failed: {e}")
+        logger.error(f"Audio generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history")
@@ -422,14 +422,14 @@ async def get_history(limit: int = 50):
                 for s in sessions
             ]
             
-            logger.info(f"✅ Retrieved {len(formatted_sessions)} sessions")
+            logger.info(f"Retrieved {len(formatted_sessions)} sessions")
             return {"sessions": formatted_sessions}
         
-        logger.warning("⚠️ Database not connected")
+        logger.warning("Database not connected")
         return {"sessions": []}
         
     except Exception as e:
-        logger.error(f"❌ History fetch failed: {e}")
+        logger.error(f"History fetch failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history/{session_id}")
@@ -441,7 +441,7 @@ async def get_session(session_id: str):
     """
     try:
         logger.info("="*60)
-        logger.info(f"🔍 GET SESSION: {session_id[:8]}")
+        logger.info(f"GET SESSION: {session_id[:8]}")
         logger.info("="*60)
         
         db = get_database_v2()
@@ -451,19 +451,19 @@ async def get_session(session_id: str):
         # Get session metadata
         session_data = db.get_session_by_id(session_id)
         if not session_data:
-            logger.error(f"❌ Session not found: {session_id[:8]}")
+            logger.error(f"Session not found: {session_id[:8]}")
             raise HTTPException(status_code=404, detail="Session not found")
         
-        logger.info(f"✅ Session found: {session_data.get('query', 'N/A')[:50]}")
+        logger.info(f"Session found: {session_data.get('query', 'N/A')[:50]}")
         
         # Get FULL message history
         messages = db.get_conversation_history(session_id)
         
         if not messages:
-            logger.warning(f"⚠️ No messages found for session: {session_id[:8]}")
+            logger.warning(f"No messages found for session: {session_id[:8]}")
             messages = []
         else:
-            logger.info(f"📖 Loaded {len(messages)} messages from database")
+            logger.info(f"Loaded {len(messages)} messages from database")
             for i, msg in enumerate(messages, 1):
                 logger.info(f"  {i}. {msg['role']}: {msg['content'][:60]}...")
         
@@ -481,7 +481,7 @@ async def get_session(session_id: str):
         ]
         
         logger.info("="*60)
-        logger.info(f"✅ RETURNING {len(formatted_messages)} messages to frontend")
+        logger.info(f"RETURNING {len(formatted_messages)} messages to frontend")
         logger.info("="*60)
         
         return {
@@ -495,7 +495,7 @@ async def get_session(session_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Session fetch failed: {e}")
+        logger.error(f"Session fetch failed: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -520,17 +520,17 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         update_data = {}
         if new_title:
             update_data['query'] = new_title
-            logger.info(f"📝 New title: {new_title[:50]}")
+            logger.info(f"New title: {new_title[:50]}")
         if is_favorite is not None:
             update_data['is_favorite'] = is_favorite
-            logger.info(f"⭐ Favorite: {is_favorite}")
+            logger.info(f"Favorite: {is_favorite}")
         
         success = db.update_session(session_id, update_data)
         
         if not success:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        logger.info(f"✅ Session updated successfully")
+        logger.info(f"Session updated successfully")
         
         return {
             "success": True,
@@ -542,7 +542,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Update failed: {e}")
+        logger.error(f"Update failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/history/{session_id}")
@@ -560,7 +560,7 @@ async def delete_session(session_id: str):
         if not success:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        logger.info(f"✅ Session deleted successfully")
+        logger.info(f"Session deleted successfully")
         
         return {
             "success": True,
@@ -571,13 +571,13 @@ async def delete_session(session_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Delete failed: {e}")
+        logger.error(f"Delete failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
     logger.info("="*60)
-    logger.info("🚀 VETTAN AI BACKEND v5.0.0 STARTING")
+    logger.info("VETTAN AI BACKEND v5.0.0 STARTING")
     logger.info("="*60)
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

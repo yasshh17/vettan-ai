@@ -16,10 +16,6 @@ openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
-# ──────────────────────────────────────────────
-# Step 1: Query Decomposition
-# ──────────────────────────────────────────────
-
 DECOMPOSITION_PROMPT = """You are a search query optimizer for a world-class research assistant.
 
 Given a research question, generate exactly 3-4 focused search queries that together will provide comprehensive, multi-angle coverage of the topic.
@@ -163,10 +159,6 @@ async def parallel_search(queries: List[str], max_results_per_query: int = 5) ->
     }
 
 
-# ──────────────────────────────────────────────
-# Step 3: Synthesis
-# ──────────────────────────────────────────────
-
 SYNTHESIS_PROMPT = """You are Vettan, a world-class AI research assistant. Your research quality rivals ChatGPT, Claude, and Gemini. You provide comprehensive, deeply researched, well-cited answers.
 
 Based on the search results below, write a thorough and authoritative response to the user's question.
@@ -244,10 +236,6 @@ async def synthesize(
         return f"Research synthesis encountered an error: {str(e)}"
 
 
-# ──────────────────────────────────────────────
-# Main Pipeline (called by main.py)
-# ──────────────────────────────────────────────
-
 async def research_complete(query: str) -> Dict[str, Any]:
     """
     Full research pipeline. Returns result in the EXACT same format
@@ -319,10 +307,6 @@ async def research_complete(query: str) -> Dict[str, Any]:
         }
     }
 
-
-# ──────────────────────────────────────────────
-# Follow-up Handler (direct LLM, no research)
-# ──────────────────────────────────────────────
 
 async def handle_followup(
     query: str,

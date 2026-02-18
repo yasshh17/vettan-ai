@@ -88,10 +88,10 @@ Thought: {agent_scratchpad}"""
         callbacks: Optional[List] = None
     ) -> Dict[str, Any]:
         """Execute research with fallback synthesis"""
-        # Create a fresh handler for THIS request
+        
         stats_handler = TokenAndToolHandler()
         
-        # Combine with existing callbacks
+        
         request_callbacks = [stats_handler]
         if callbacks:
             request_callbacks.extend(callbacks)
@@ -115,7 +115,7 @@ Thought: {agent_scratchpad}"""
             
             # FALLBACK: If agent stopped without proper answer, synthesize from gathered data
             if 'stopped due to' in output.lower() or len(output) < 100:
-                print("⚠️ Agent incomplete - using fallback synthesis...")
+                print("Agent incomplete - using fallback synthesis...")
                 output = self._fallback_synthesis(query, intermediate_steps)
             
             citations = CitationExtractor.extract_from_agent_steps(intermediate_steps)
@@ -160,12 +160,12 @@ Thought: {agent_scratchpad}"""
         if not observations:
             return "Unable to complete research. Please try again with more iterations."
         
-        # Build sources text
+        
         sources_text = ""
         for i, obs in enumerate(observations[:3]):
             sources_text += f"Source {i+1}:\n{obs}\n\n"
         
-        # Synthesize from gathered data
+        
         synthesis_prompt = f"""Based on the research data gathered, provide a comprehensive answer to this question:
 
 Question: {query}
