@@ -1035,7 +1035,7 @@ Special thanks to the open-source AI/ML community for advancing the field and ma
 
 ---
 
-**Built with by [Yash Tambakhe](https://github.com/yasshh17)**
+**Built by [Yash Tambakhe](https://github.com/yasshh17)**
 
 *Enterprise-grade AI research for everyone*
 
