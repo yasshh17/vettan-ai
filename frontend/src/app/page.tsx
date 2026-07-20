@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function LandingPage() {
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#09090c] font-[family-name:var(--font-geist-sans)] text-[#EDEDF2]">
+    <div className="relative min-h-screen overflow-x-clip bg-[#09090c] font-[family-name:var(--font-geist-sans)] text-[#EDEDF2]">
       <BackgroundLayer />
       <Nav />
       <main className="relative z-10">
