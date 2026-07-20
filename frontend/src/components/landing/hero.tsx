@@ -4,10 +4,10 @@ export function Hero() {
   return (
     <section className="relative z-10 mx-auto flex max-w-[900px] flex-col items-center px-12 pb-[100px] pt-[110px] text-center">
       <div
-        className="animate-fadeup inline-flex items-center gap-2 rounded-full border border-[rgba(124,111,240,0.3)] bg-[rgba(124,111,240,0.12)] px-3.5 py-1.5 text-[13px] font-medium text-[#B6ACFF] opacity-0"
+        className="animate-fadeup inline-flex items-center gap-1.5 rounded-full border border-[rgba(156,144,255,0.15)] bg-[rgba(124,111,240,0.07)] px-3 py-1 text-[12.5px] font-[350] tracking-[0.01em] text-[#B6ACFF] opacity-0"
         style={{ animationDelay: "0s" }}
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-[#9C90FF]" />
+        <span className="h-[5px] w-[5px] rounded-full bg-[#9C90FF]" />
         ReAct-based multi-agent system
       </div>
 
