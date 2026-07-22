@@ -81,7 +81,6 @@ export function ArchitectureLoop() {
                   ? {
                       borderColor: "rgba(124,111,240,0.55)",
                       backgroundColor: "rgba(124,111,240,0.1)",
-                      transform: "scale(1.03)",
                     }
                   : {
                       borderColor: "rgba(255,255,255,0.08)",
