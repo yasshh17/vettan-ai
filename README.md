@@ -40,7 +40,7 @@
 
 ## Overview
 
-**Vettan** is a production-ready autonomous research platform that synthesizes information from multiple web sources using advanced AI agents. Built for enterprises and professionals requiring accurate, verifiable, and comprehensively cited research.
+**Vettan** is a multi-step web research assistant that decomposes a user question into focused searches, executes the searches in parallel, ranks the retrieved results, and generates a report with selected source links.
 
 ### The Problem
 
