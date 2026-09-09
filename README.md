@@ -2,7 +2,7 @@
 
 # Vettan
 
-### Enterprise-Grade Autonomous Research Agent
+### Multi-Step Web Research Assistant
 
 **Think deeper. Discover faster.**
 
@@ -40,49 +40,45 @@
 
 ## Overview
 
-**Vettan** is a production-ready autonomous research platform that synthesizes information from multiple web sources using advanced AI agents. Built for enterprises and professionals requiring accurate, verifiable, and comprehensively cited research.
+**Vettan** is a multi-step web research assistant that decomposes a user question into focused searches, executes them in parallel, ranks the retrieved results, and generates a report with selected source links.
 
 ### The Problem
 
-Traditional AI chatbots provide answers without source verification, making them unsuitable for:
-- Enterprise research and decision-making requiring accountability
-- Academic work needing proper citations
-- Professional analysis where accuracy matters
-- Knowledge work demanding verifiable information
+AI-generated answers can be difficult to assess when they do not show which web sources informed the response. Vettan explores a source-aware workflow that makes the retrieved material visible to the user.
 
 ### The Solution
 
-Vettan implements a **ReAct (Reasoning + Acting) agent pattern** with LangChain to:
-- **Search and synthesize** 10-20 sources per query with parallel execution
-- **Track and display** full citations for every claim with source URLs
+Vettan implements a **multi-step research pipeline** to:
+- **Decompose** a question into 3-4 focused searches
+- **Execute searches in parallel** and deduplicate results by URL
+- **Rank and select** up to five sources for synthesis
+- **Display selected source links** alongside the generated report
 - **Maintain conversation context** across multiple turns with persistent storage
 - **Generate accessible audio** versions of research with natural TTS
-- **Provide enterprise-grade UI/UX** matching ChatGPT quality standards
 
 ### Why Vettan?
 ```diff
-- Traditional AI: "Here's an answer" (source unknown, unverifiable)
-+ Vettan: "Here's research from 12 sources" (cited, verifiable, trustworthy)
+- A generated answer without visible supporting material
++ A research report accompanied by the selected web sources
 ```
 
-**Target Users:** Research teams, analysts, knowledge workers, students, executives, and professionals requiring verifiable AI-generated insights.
+**Intended users:** Students, analysts, and knowledge workers who want AI-generated research accompanied by visible source links.
 
 ---
 
 ## Key Features
 
 ### **Advanced Research Engine**
-- **Multi-source synthesis** - Aggregates and analyzes 10-20 sources per query using Tavily API
-- **Full citation tracking** - Every claim linked to original source with domain and URL
-- **Follow-up conversations** - Maintains full context across unlimited conversation turns
-- **Smart caching** - Reduces API costs by 60% through intelligent query result caching
-- **ReAct agent pattern** - Iterative reasoning with tool use for comprehensive research
+- **Multi-source synthesis** - Searches several focused queries and synthesizes up to five ranked sources
+- **Source display** - Shows the selected source titles, domains, and URLs
+- **Follow-up conversations** - Uses recent stored messages to answer follow-up questions
+- **Exact-query caching** - Reuses a stored result when the normalized query matches
 - **Query decomposition** - Breaks complex queries into focused sub-questions
 
-### **Enterprise-Grade Interface**
+### **Research Interface**
 - **Quality UI** - Premium animations, cascade effects, micro-interactions
 - **64px search consistency** - Professional input sizing across all application views
-- **WCAG AAA compliance** - 98 Lighthouse accessibility score with focus indicators
+- **Keyboard focus states** - Visible focus styling for supported controls
 - **Dark mode optimized** - Carefully crafted contrast ratios and visual hierarchy
 - **Fully responsive** - Seamless experience from 375px mobile to 4K displays
 - **Keyboard navigation** - Complete accessibility with visible purple focus rings
@@ -135,7 +131,7 @@ graph TB
     end
     
     Client -->|REST API| API
-    API -->|ReAct Agent Queries| LLM
+    API -->|Decompose and synthesize| LLM
     API -->|Web Research| Search
     API -->|Persist Sessions| DB
     API -->|Generate Speech| TTS
@@ -189,12 +185,10 @@ vettan-ai/
 │   └── postcss.config.mjs
 │
 └── backend/                     # FastAPI + Python 3.11
-    ├── agent/                   # LangChain agents
-    │   ├── cached_research_agent.py    # Agent with caching
-    │   ├── callbacks.py                 # LangChain callbacks
-    │   ├── enhanced_research.py         # Enhanced ReAct agent
-    │   ├── query_decomposer.py          # Complex query breakdown
-    │   └── research_agent.py            # Core ReAct agent
+    ├── agent/
+    │   ├── research_pipeline.py         # Active decomposition, search, ranking, synthesis
+    │   ├── prompts.py                   # Dynamic query-decomposition prompt
+    │   └── ...                          # Earlier experimental agent implementations
     ├── audio/                   # Audio generation
     │   └── tts.py              # OpenAI TTS integration
     ├── database/                # Database layer
@@ -220,22 +214,20 @@ vettan-ai/
    ↓
 2. Frontend validates input and sends POST to /api/research
    ↓
-3. FastAPI receives request, creates ReAct agent instance
+3. FastAPI decomposes the question into 3-4 focused search queries
    ↓
-4. Agent reasoning loop (max 10 iterations per .env config):
-   ├─ Plan: Agent decides what information is needed
-   ├─ Search: Execute Tavily searches across web sources
-   ├─ Analyze: Extract relevant information and citations
-   ├─ Reason: Determine if more research needed
-   └─ Repeat or conclude
+4. Tavily searches run concurrently
+   ├─ Results are deduplicated by URL
+   ├─ Results are ranked by the returned relevance score
+   └─ Up to five sources are selected
    ↓
 5. GPT-4o-mini synthesizes findings into comprehensive report
    ↓
-6. Citations extracted and formatted with domains/URLs
+6. Selected source metadata is returned with the report
    ↓
 7. Response + citations persisted to Supabase PostgreSQL
    ↓
-8. Smart cache stores result for similar future queries (60% cost savings)
+8. The normalized query result is cached for an exact future match
    ↓
 9. Frontend receives response and renders:
    ├─ User message bubble (gradient, right-aligned)
@@ -254,7 +246,7 @@ vettan-ai/
 | **FastAPI (async)** | Modern Python, automatic OpenAPI docs, async/await support | Less mature ecosystem than Django |
 | **Supabase PostgreSQL** | Managed database, real-time subscriptions, built-in auth | Less control than self-hosted |
 | **Tailwind CSS** | Utility-first, design consistency, no runtime overhead | Verbose HTML class names |
-| **LangChain ReAct Agent** | Pre-built agent patterns, tool integration, active community | Abstraction layer complexity |
+| **Multi-step research pipeline** | Separates query decomposition, retrieval, ranking, and synthesis | Generated claims still require user review |
 | **SWR for caching** | Stale-while-revalidate pattern, automatic revalidation | vs TanStack Query or RTK Query |
 | **shadcn/ui** | Customizable components, TypeScript native, Tailwind-based | Build own vs pre-made library |
 | **Vercel + Render** | Zero-config deployment, global CDN, managed infrastructure | Vendor lock-in vs AWS flexibility |
@@ -286,7 +278,7 @@ vettan-ai/
   "framework": "FastAPI 0.100+",
   "language": "Python 3.11",
   "server": "Uvicorn (ASGI server with async support)",
-  "agent_framework": "LangChain 0.1+",
+  "research_pipeline": "Custom async decomposition, search, ranking, and synthesis",
   "llm": "OpenAI GPT-4o-mini",
   "search_api": "Tavily API (multi-source web search)",
   "audio": "OpenAI Text-to-Speech (TTS)",
@@ -301,11 +293,8 @@ vettan-ai/
 ### Agent Tools & Utilities
 ```python
 {
-  "research_agent": "LangChain ReAct agent with GPT-4o-mini",
-  "cached_agent": "Research agent with result caching",
-  "enhanced_research": "Advanced multi-hop research",
-  "query_decomposer": "Complex query breakdown",
-  "multi_hop_search": "Iterative search refinement",
+  "research_pipeline": "Query decomposition, parallel search, ranking, and synthesis",
+  "query_decomposer": "Generates 3-4 focused search queries",
   "web_scraper": "Content extraction from URLs",
   "source_ranker": "Source quality assessment",
   "citation_extractor": "Automatic citation parsing",
@@ -505,7 +494,6 @@ const response = await fetch('http://localhost:8000/api/research', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     query: "What are the latest developments in fusion energy 2025?",
-    max_iterations: 10,
     use_cache: true
   })
 })
@@ -515,7 +503,7 @@ const data = await response.json()
 console.log(data.output)      // Markdown research report
 console.log(data.citations)   // Array of {domain, url} objects
 console.log(data.session_id)  // For follow-up queries
-console.log(data.metadata)    // {search_queries, sources_found, tokens_used, cost}
+console.log(data.metadata)    // Pipeline name, selected-source count, and timing details
 ```
 
 ### Follow-up Conversation
@@ -531,8 +519,7 @@ const followUp = await fetch('http://localhost:8000/api/research', {
   })
 })
 
-// Maintains full conversation context
-// Agent remembers previous research about fusion energy
+// Uses recent messages from the stored conversation as context
 ```
 
 ### Generate Audio Version
@@ -599,7 +586,6 @@ Generate comprehensive multi-source research report.
 ```typescript
 interface ResearchRequest {
   query: string              // Research question (required)
-  max_iterations?: number    // Agent loop limit (default: from .env)
   use_cache?: boolean        // Enable caching (default: true)
   session_id?: string        // For follow-up queries (optional)
   is_followup?: boolean      // Maintains context (default: false)
@@ -613,11 +599,11 @@ interface ResearchResponse {
   citations: Citation[]      // Array of source citations
   session_id: string         // Conversation UUID
   metadata: {
-    search_queries: number   // Searches performed
-    sources_found: number    // Total sources retrieved
-    tokens_used: number      // LLM tokens consumed
-    cost: number            // Total API cost (USD)
-    duration_ms: number     // Processing time
+    pipeline: string         // Pipeline identifier
+    sources_count: number    // Sources selected for synthesis
+    sub_queries: string[]    // Generated focused searches
+    total_time: number       // End-to-end duration in seconds
+    timing: object           // Decomposition, search, and synthesis timing
   }
   messages: Message[]        // Full conversation thread
 }
@@ -633,8 +619,7 @@ interface Citation {
 curl -X POST http://localhost:8000/api/research \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "Best AI coding assistants in 2025",
-    "max_iterations": 10
+    "query": "Best AI coding assistants this year"
   }'
 ```
 
@@ -698,27 +683,9 @@ Delete conversation and all associated messages.
 
 ---
 
-## ⚡ Performance
+## ⚡ Implementation Notes
 
-### Lighthouse Scores
-
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| **Performance** | > 90 | 94 | ✅ |
-| **Accessibility** | > 95 | 98 | ✅ |
-| **Best Practices** | > 95 | 96 | ✅ |
-| **SEO** | > 90 | 92 | ✅ |
-
-### Application Metrics
-
-| Operation | Target | Measured | Optimization |
-|-----------|--------|----------|--------------|
-| **Time to First Byte** | < 200ms | 145ms | Vercel edge functions |
-| **First Contentful Paint** | < 1.5s | 1.2s | Code splitting, lazy loading |
-| **Time to Interactive** | < 3.0s | 2.4s | Minimal JavaScript bundle |
-| **Research Query (cold)** | < 10s | 6.8s | Parallel searches, async |
-| **Research Query (cached)** | < 2s | 0.8s | 60% cost reduction |
-| **Audio Generation** | < 5s | 3.2s | Streaming response |
+The repository does not currently include a reproducible benchmark suite for latency, cost savings, answer correctness, or accessibility scores. Those measures should be reported only after running a documented evaluation with a fixed query set and environment.
 
 ### Optimizations Implemented
 
@@ -735,16 +702,16 @@ Delete conversation and all associated messages.
 **Backend Performance:**
 - Async/await throughout (non-blocking I/O)
 - Parallel web searches with asyncio.gather
-- Smart query result caching (60% cost savings)
+- Exact normalized-query result caching
 - Supabase connection pooling
 - Pydantic validation (fast C-based parsing)
 - Response streaming for large outputs
 
-**Cost Optimization:**
-- Cached queries: $0.00 (free)
-- GPT-4o-mini: 80% cheaper than GPT-4
-- Smart prompt caching: 50% token reduction
-- Typical query cost: $0.015-0.03
+### Current limitations
+
+- Source links show which retrieved pages informed synthesis; they do not prove that every generated claim is supported.
+- The active pipeline uses one language-model synthesis step and should not be described as a multi-agent system.
+- Retrieval quality and citation coverage have not yet been formally evaluated in this repository.
 
 ---
 
@@ -907,13 +874,13 @@ SUPABASE_KEY=your-anon-or-service-key
 
 ### Completed (v1.0 - Current)
 - [x] Multi-turn conversational AI with full context preservation
-- [x] Multi-source web research (10-20 sources via Tavily)
-- [x] Complete citation and source tracking system
+- [x] Parallel web searches with up to five ranked sources selected for synthesis
+- [x] Selected source metadata displayed with the generated report
 - [x] Audio generation with 6 voice options (OpenAI TTS)
 - [x] Conversation history with Supabase PostgreSQL
 - [x] Favorites, rename, delete with optimistic updates
-- [x] Responsive dark-mode UI (WCAG AAA compliant)
-- [x] Smart result caching (60% cost reduction)
+- [x] Responsive dark-mode UI
+- [x] Exact normalized-query result caching
 - [x] Voice mode with real-time transcription
 - [x] Professional toast notifications
 - [x] Complete keyboard navigation and accessibility
@@ -1037,6 +1004,6 @@ Special thanks to the open-source AI/ML community for advancing the field and ma
 
 **Built by [Yash Tambakhe](https://github.com/yasshh17)**
 
-*Enterprise-grade AI research for everyone*
+*Source-aware web research in one interface*
 
 </div>
