@@ -21,7 +21,7 @@ tiktoken==0.8.0
 
 # Database
 supabase==2.9.0
-websockets==15.0.1
+websockets==17.1
 
 # Rate limiting is hand-rolled in utils/rate_limit.py — no dependency needed.
 # slowapi was dropped: its engine (`limits`) ships only fixed-window,
