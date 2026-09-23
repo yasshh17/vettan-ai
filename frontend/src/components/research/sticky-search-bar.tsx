@@ -1,8 +1,11 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { ArrowUp, Loader2, Mic, AudioWaveform } from "lucide-react"
-import axios from "axios"
+import { ArrowUp, Square, Mic, AudioWaveform } from "lucide-react"
+import { refreshHistory, confirmSessionSaved } from "@/lib/api"
+import { authPost, RateLimitedError } from "@/lib/auth-fetch"
+import { streamResearch, type StreamEvent } from "@/lib/research-stream"
+import { useToast } from "@/hooks/use-toast"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -20,6 +23,25 @@ interface StickySearchBarProps {
   hasResults: boolean
   onVoiceModeToggle?: () => void
   currentSessionId?: string | null
+  /** Called for every event of a streamed answer: stage, sources, token, done, error. */
+  onStreamEvent?: (event: StreamEvent, context: { query: string; isFollowUp: boolean }) => void
+  /**
+   * Holds the in-flight stream's AbortController. Owned by the page, because this
+   * component unmounts mid-stream: submitting swaps the hero search bar for the
+   * docked one, so a controller kept in local state would be lost and Stop would
+   * quietly do nothing.
+   */
+  abortRef?: React.MutableRefObject<AbortController | null>
+  /**
+   * Same reason as abortRef: a query rejected by the rate limiter has nowhere
+   * local to land if this instance unmounts before the response comes back.
+   * A first-ever query flips isLoading true then back to false with no
+   * results yet, which swaps the hero bar out and back in as a fresh
+   * instance — setQuery() on the failing (stale) instance would target a
+   * component that's already gone. Written on rejection, read once by
+   * whichever instance mounts next and cleared immediately after.
+   */
+  pendingQueryRef?: React.MutableRefObject<string | null>
 }
 
 export function StickySearchBar({
@@ -28,17 +50,41 @@ export function StickySearchBar({
   setIsLoading,
   hasResults,
   onVoiceModeToggle,
-  currentSessionId
+  currentSessionId,
+  onStreamEvent,
+  abortRef,
+  pendingQueryRef
 }: StickySearchBarProps) {
-  const [query, setQuery] = useState("")
+  const { toast } = useToast()
+  // Seeded once from any query a previous (now-unmounted) instance couldn't
+  // hand back directly. Read-only here on purpose: Next's default
+  // reactStrictMode double-invokes a useState initializer on mount in dev
+  // and keeps only one result, so an initializer that both reads AND clears
+  // the ref would have the two invocations disagree (the second would see it
+  // already cleared) and could silently lose the restored text. The clear is
+  // a separate effect below, which is idempotent under that same
+  // double-invocation.
+  const [query, setQuery] = useState(() => pendingQueryRef?.current ?? "")
   const [isFocused, setIsFocused] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [showMicTooltip, setShowMicTooltip] = useState(false)
   const [showVoiceModeTooltip, setShowVoiceModeTooltip] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
+  const localAbortRef = useRef<AbortController | null>(null)
+  // Prefer the page-owned ref so Stop still works after this component remounts
+  const activeAbortRef = abortRef ?? localAbortRef
   const micTooltipTimer = useRef<number | null>(null)
   const voiceModeTooltipTimer = useRef<number | null>(null)
+
+  // Clears what the initializer above just consumed, so a later, unrelated
+  // mount doesn't inherit stale text. Split from the read for the StrictMode
+  // reason noted there; setting a ref to null twice (StrictMode's mount ->
+  // cleanup -> mount replay) is harmless.
+  useEffect(() => {
+    if (pendingQueryRef) pendingQueryRef.current = null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -82,29 +128,149 @@ export function StickySearchBar({
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
 
+  const handleStop = () => {
+    const controller = activeAbortRef.current
+    if (!controller) {
+      console.warn("Stop was clicked but no stream controller is registered")
+      return
+    }
+    controller.abort()
+  }
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
     if (!query.trim() || isLoading) return
 
+    const submitted = query
+    const isFollowUp = Boolean(currentSessionId && hasResults)
+    const payload = {
+      query: submitted,
+      max_iterations: 25,
+      use_cache: true,
+      ...(isFollowUp ? { session_id: currentSessionId!, is_followup: true } : {})
+    }
+    const context = { query: submitted, isFollowUp }
+
     setIsLoading(true)
+    setQuery("")
+
+    // Put the question and an empty answer on screen before the request opens,
+    // so the page reacts immediately instead of sitting on the previous view.
+    onStreamEvent?.({ type: "submitted" }, context)
+
+    const controller = new AbortController()
+    activeAbortRef.current = controller
+
     try {
-      const isFollowUp = currentSessionId && hasResults
-      const payload = {
-        query,
-        max_iterations: 25,
-        use_cache: true,
-        ...(isFollowUp ? { session_id: currentSessionId, is_followup: true } : {})
+      let sawDone = false
+      let newSessionId: string | null = null
+
+      for await (const event of streamResearch(payload, controller.signal)) {
+        onStreamEvent?.(event, context)
+
+        if (event.type === "done") {
+          sawDone = true
+          if (!isFollowUp) newSessionId = event.session_id
+          // Same shape the non-streaming endpoint returns, so the page's
+          // session handling and the history list are updated as before.
+          onResultsUpdate({
+            output: null,
+            citations: event.citations,
+            metadata: event.metadata,
+            session_id: isFollowUp ? currentSessionId : event.session_id,
+            streamed: true
+          })
+        } else if (event.type === "error") {
+          throw new Error(event.message)
+        }
       }
 
-      const response = await axios.post(`${API_URL}/api/research`, payload)
-      if (isFollowUp) response.data.session_id = currentSessionId
-      onResultsUpdate(response.data)
-      setQuery("")
-      setTimeout(() => window.scrollTo({ top: 300, behavior: "smooth" }), 150)
+      if (!sawDone) throw new Error("The answer ended before it was complete.")
+
+      // The save happens after the stream closes, so its outcome is only
+      // knowable now. Checked after the loop so it never stalls token delivery.
+      if (newSessionId) {
+        if (!(await confirmSessionSaved(newSessionId))) {
+          onStreamEvent?.({ type: "not_saved" }, context)
+        }
+      } else {
+        refreshHistory()
+      }
+    } catch (err) {
+      if (controller.signal.aborted) {
+        onStreamEvent?.({ type: "aborted" }, context)
+      } else if (err instanceof RateLimitedError) {
+        // Deliberately NOT falling back to /api/research. It draws on the same
+        // bucket, so the retry would either be rejected too or — worse, if the
+        // buckets are ever split — quietly spend a second research request's
+        // worth of Tavily and OpenAI credits for one user action.
+        onStreamEvent?.({ type: "error", message: err.message }, context)
+        toast({ title: "Slow down a moment", description: err.message, variant: "destructive" })
+        // Nothing ran, so give the question back rather than making them retype
+        // it: handleSubmit cleared the input optimistically before the request.
+        setQuery(submitted)
+        // A follow-up keeps hasResults true throughout, so this same docked
+        // instance never remounts — setQuery above is enough, and the ref
+        // would just be a value nobody ever reads until some unrelated later
+        // mount, wrongly inheriting this text. Only a first-ever query
+        // actually remounts (isLoading round-trips true->false with no
+        // results, swapping hero->docked->hero) — see pendingQueryRef's doc
+        // comment — so only that case needs the hand-off.
+        if (!isFollowUp && pendingQueryRef) pendingQueryRef.current = submitted
+      } else {
+        console.error("Streaming failed, falling back to /api/research:", err)
+        await runWithoutStreaming(payload, context, err)
+      }
+    } finally {
+      // Only clear it if it is still ours, never a newer stream's controller
+      if (activeAbortRef.current === controller) activeAbortRef.current = null
+      setIsLoading(false)
+    }
+  }
+
+  /** Fallback if streaming fails: the original blocking request. */
+  const runWithoutStreaming = async (
+    payload: Record<string, any>,
+    context: { query: string; isFollowUp: boolean },
+    streamError: unknown
+  ) => {
+    try {
+      const data = await authPost<any>(`${API_URL}/api/research`, payload)
+      if (context.isFollowUp) data.session_id = currentSessionId
+      onStreamEvent?.({ type: "token", text: data.output }, context)
+      onStreamEvent?.(
+        {
+          type: "done",
+          session_id: data.session_id,
+          citations: data.citations ?? [],
+          metadata: data.metadata ?? {}
+        },
+        context
+      )
+      onResultsUpdate(data)
+      refreshHistory()
     } catch (err) {
       console.error("Research failed:", err)
-    } finally {
-      setIsLoading(false)
+      // A rate limit hit on the fallback describes the situation better than
+      // whatever made the stream fail, so it wins. Otherwise keep reporting the
+      // original stream error, which is the more useful diagnosis.
+      if (err instanceof RateLimitedError) {
+        onStreamEvent?.({ type: "error", message: err.message }, context)
+        // Same treatment as the stream's own 429: nothing succeeded here
+        // either, so give the text back the same way.
+        toast({ title: "Slow down a moment", description: err.message, variant: "destructive" })
+        setQuery(context.query)
+        // See the matching guard in the stream's own 429 branch above: the
+        // ref hand-off is only for a remount, which only happens for a
+        // first-ever query.
+        if (!context.isFollowUp && pendingQueryRef) pendingQueryRef.current = context.query
+      } else {
+        const message =
+          streamError instanceof Error && streamError.message
+            ? streamError.message
+            : "Could not reach the research service. Check your connection and try again."
+        onStreamEvent?.({ type: "error", message }, context)
+      }
     }
   }
 
@@ -268,24 +434,26 @@ export function StickySearchBar({
           )}
 
           <button
-            type="submit"
-            onClick={handleSubmit}
-            disabled={!hasQuery || isLoading}
-            aria-label="Submit research query"
+            type={isLoading ? "button" : "submit"}
+            onClick={isLoading ? handleStop : handleSubmit}
+            disabled={!hasQuery && !isLoading}
+            aria-label={isLoading ? "Stop generating" : "Submit research query"}
             style={{ width: '40px', height: '40px' }}
             className={`
               rounded-lg
               flex items-center justify-center
               transition-all duration-200 ease-out
               shadow-sm
-              
-              ${hasQuery && !isLoading
-                ? "bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white shadow-purple-500/20 hover:scale-[1.02] active:scale-95"
-                : "bg-[#2A2A2A] text-[#666666] cursor-not-allowed opacity-60"}
+
+              ${isLoading
+                ? "bg-[#2A2A2A] hover:bg-[#333333] text-neutral-300 active:scale-95"
+                : hasQuery
+                  ? "bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white shadow-purple-500/20 hover:scale-[1.02] active:scale-95"
+                  : "bg-[#2A2A2A] text-[#666666] cursor-not-allowed opacity-60"}
             `}
           >
             {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2.5} />
+              <Square className="h-4 w-4 fill-current" strokeWidth={2.5} />
             ) : (
               <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
             )}

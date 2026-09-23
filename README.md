@@ -460,38 +460,66 @@ pnpm lint
 ```
 
 ### Supabase Database Setup
+
+The tables are `research_sessions` and `messages` (an older draft of this README
+described a `conversations` table that was never built).
+
 ```sql
--- Create conversations table
-CREATE TABLE conversations (
+CREATE TABLE research_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   query TEXT NOT NULL,
+  query_hash TEXT,
+  report TEXT,
+  citations JSONB,
+  metadata JSONB,
+  is_favorite BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  is_favorite BOOLEAN DEFAULT FALSE
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create messages table
 CREATE TABLE messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+  session_id UUID REFERENCES research_sessions(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
   citations JSONB,
   metadata JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- Create indexes for performance
-CREATE INDEX idx_conversations_user_id ON conversations(user_id);
-CREATE INDEX idx_conversations_created_at ON conversations(created_at DESC);
-CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
-CREATE INDEX idx_messages_created_at ON messages(created_at DESC);
-
--- Enable Row Level Security
-ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ```
+
+#### Tenant isolation
+
+`user_id`, the cascades, the indexes and the RLS policies are applied by the
+migrations in [`supabase/migrations/`](supabase/migrations/) — run those rather
+than copying DDL from this README:
+
+| Migration | What it does | When to apply |
+|---|---|---|
+| `0001_add_user_id.sql` | Adds `research_sessions.user_id`, the FK cascades and the indexes | Non-breaking; apply first |
+| `0002_backfill_legacy_sessions.sql` | Assigns pre-auth rows (`user_id is null`) to their owner | After `0001`, before `0003` — otherwise those rows become invisible to everyone |
+| `0003_enable_rls.sql` | Enables RLS and adds `auth.uid()` policies on both tables | **Only after** the backend that forwards the caller's JWT is deployed |
+| `0004_scope_query_hash_unique.sql` | Replaces the global `unique(query_hash)` with `unique(user_id, query_hash)` | Any time; non-breaking. Until it runs, a second account searching a query someone else already ran has its save silently rejected |
+| `0005_drop_legacy_open_policies.sql` | Drops the two pre-existing `Allow anon full access` policies | **After `0003`.** Without it RLS reads as enabled but changes nothing: policies are OR-ed, so a leftover `using (true)` keeps both tables open to the anon key |
+
+Run all five. After `0003`, confirm with the anon key and no JWT that
+`GET /rest/v1/research_sessions?select=id` returns nothing. "RLS enabled" alone
+proves nothing. RLS is `0003`, not `0002` — an earlier version of this table skipped
+the backfill and numbered RLS as `0002`, so anyone following it enabled no RLS at
+all and left the tables readable through the public anon key.
+
+Isolation is enforced in two independent layers:
+
+1. **Application layer** — every endpoint requires a valid Supabase JWT, and
+   every query filters by the id derived from that token. A client-supplied
+   `session_id` is never trusted on its own.
+2. **Database layer** — RLS policies compare `user_id` to `auth.uid()`, so a
+   query that forgets its user filter still returns nothing. This also closes
+   direct access via the public anon key, which ships in the frontend bundle.
+
+Rows created before `0001` have `user_id` NULL. They have no recoverable owner
+and are deliberately invisible to every account.
 
 ---
 
@@ -898,8 +926,51 @@ MAX_ITERATIONS=10
 
 # Database (Supabase)
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-or-service-key
+
+# MUST be the anon key, not the service role key. The backend forwards each
+# caller's JWT on top of it so auth.uid() resolves and RLS applies. A service
+# role key bypasses RLS entirely and would silently disable the database-layer
+# half of the tenant isolation.
+SUPABASE_KEY=your-anon-key
+
+# Service role key, used ONLY for auth.admin.delete_user during account
+# deletion. Never used for research or history queries.
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# ── Rate limiting ────────────────────────────────────────────────────────
+# All optional; the defaults shown are what the app uses if unset. Capacity is
+# the burst a caller may fire back-to-back; refill is the sustained rate.
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_TRUSTED_HOPS=1       # proxies in front of the app; 0 for local dev
+RATE_LIMIT_MAX_KEYS=50000
+
+RATE_LIMIT_IP_CAPACITY=100       # pre-auth, per client address
+RATE_LIMIT_IP_REFILL_PER_MIN=60
+RATE_LIMIT_RESEARCH_CAPACITY=20  # /api/research AND /api/research/stream
+RATE_LIMIT_RESEARCH_REFILL_PER_MIN=10
+RATE_LIMIT_AUDIO_CAPACITY=10
+RATE_LIMIT_AUDIO_REFILL_PER_MIN=5
+RATE_LIMIT_READ_CAPACITY=60
+RATE_LIMIT_READ_REFILL_PER_MIN=60
+RATE_LIMIT_WRITE_CAPACITY=30
+RATE_LIMIT_WRITE_REFILL_PER_MIN=30
+RATE_LIMIT_ACCOUNT_CAPACITY=3
+RATE_LIMIT_ACCOUNT_REFILL_PER_MIN=1
+
+# In-flight cap. A rate limit bounds how often requests start, not how many
+# run at once; a research request holds a threadpool slot plus several
+# upstream connections for its whole duration.
+RESEARCH_MAX_CONCURRENT_PER_USER=2
+RESEARCH_MAX_CONCURRENT_GLOBAL=8
 ```
+
+> **Rate limiting requires a single worker.** Buckets live in process memory
+> (`backend/utils/rate_limit.py`), which is correct for the one-worker
+> `backend/Procfile`. Under N workers each keeps its own buckets and every
+> limit is silently multiplied by N. The app logs a warning at startup if it
+> detects `WEB_CONCURRENCY > 1` or a `--workers` flag. Before scaling out,
+> implement the `RateLimitStore` protocol against Redis — it is one method,
+> and the in-memory implementation documents the atomicity it has to preserve.
 
 ---
 
@@ -944,8 +1015,10 @@ git checkout -b feature/your-feature-name
 # - Follow existing code style
 
 # 5. Test your changes
-cd frontend && pnpm test        # Frontend tests
-cd backend && pytest tests/     # Backend tests
+cd frontend && pnpm tsc --noEmit         # Frontend typecheck
+cd backend && python tests/test_isolation.py   # Tenant isolation + schema readiness
+cd backend && python tests/test_rate_limit.py  # Rate limiting
+# Both backend suites are standalone scripts, not pytest — run them directly.
 
 # 6. Commit with conventional commits
 git commit -m "feat: add amazing feature"

@@ -2,12 +2,19 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import useSWR from 'swr'
-import axios from 'axios'
 import { Clock, MoreHorizontal, Star, Pencil, Trash2, SquarePen, Search, X, PanelLeft, Menu, Loader2, Check, AlertCircle } from "lucide-react"
+import { UserMenu } from "@/components/auth/user-menu"
+import { HISTORY_URL } from '@/lib/api'
+import { authGet, authPatch, authDelete, withAuthRedirect } from '@/lib/auth-fetch'
+import { createClient } from '@/lib/supabase/client'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-const fetcher = (url: string) => axios.get(url).then(res => res.data)
+// Authenticated fetcher — the backend returns only this caller's sessions.
+// Accepts either key shape so it cannot throw if a caller ever passes the bare
+// URL; the tuple form is what this component actually subscribes with.
+const fetcher = (key: string | [string, string]) =>
+  authGet<any>(Array.isArray(key) ? key[0] : key)
 
 interface Session {
   id: string
@@ -200,9 +207,33 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   
   const searchInputRef = useRef<HTMLInputElement>(null)
-  
+
+  // The signed-in user's id, used to scope the SWR cache key below.
+  const [userId, setUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    let active = true
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (active) setUserId(data.user?.id ?? null)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id ?? null)
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  // Key includes the user id so signing out and back in as someone else cannot
+  // serve the previous account's history out of the SWR cache. A null key means
+  // "signed out" and SWR skips the request entirely.
   const { data, error, isLoading, mutate } = useSWR(
-    `${API_URL}/api/history`,
+    userId ? [HISTORY_URL, userId] : null,
     fetcher,
     {
       refreshInterval: 60000,
@@ -312,9 +343,11 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
     )
     
     try {
-      await axios.patch(`${API_URL}/api/history/${session.id}`, {
-        is_favorite: newFavoriteStatus
-      })
+      await withAuthRedirect(() =>
+        authPatch(`${API_URL}/api/history/${session.id}`, {
+          is_favorite: newFavoriteStatus
+        })
+      )
       
       showToast(
         newFavoriteStatus ? "Added to favorites" : "Removed from favorites",
@@ -357,9 +390,11 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
     )
     
     try {
-      await axios.patch(`${API_URL}/api/history/${renameModalSession.id}`, {
-        query: newTitle
-      })
+      await withAuthRedirect(() =>
+        authPatch(`${API_URL}/api/history/${renameModalSession.id}`, {
+          query: newTitle
+        })
+      )
       
       showToast('Conversation renamed', 'success')
       setRenameModalSession(null)
@@ -400,7 +435,7 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
     )
     
     try {
-      await axios.delete(`${API_URL}/api/history/${sessionId}`)
+      await withAuthRedirect(() => authDelete(`${API_URL}/api/history/${sessionId}`))
       
       if (activeSessionId === sessionId) {
         setActiveSessionId(null)
@@ -706,9 +741,13 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
           </div>
         </div>
       )}
+
+      <div className="mt-auto flex-shrink-0 border-t border-neutral-800/50 p-2">
+        <UserMenu isExpanded={isExpanded} />
+      </div>
     </>
   )
-  
+
   return (
     <>
       {toast && (

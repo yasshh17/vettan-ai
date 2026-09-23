@@ -4,9 +4,13 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Volume2, Download, Loader2, Play, Pause, RotateCcw, Sparkles, X } from "lucide-react"
-import axios from "axios"
+import { authPost, API_BASE_URL, RateLimitedError } from "@/lib/auth-fetch"
+import { useToast } from "@/hooks/use-toast"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+// Was a bare axios call against a 127.0.0.1 default that differed from every
+// other caller's localhost default. /api/audio now requires a JWT like the rest
+// of the API, so this goes through the shared authenticated client.
+const API_URL = API_BASE_URL
 
 const VOICES = {
   nova: "Female, warm, friendly",
@@ -22,6 +26,7 @@ interface AudioPlayerProps {
 }
 
 export function AudioPlayer({ text }: AudioPlayerProps) {
+  const { toast } = useToast()
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -68,12 +73,10 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
     }
   }, [audioUrl])
   
-  // Show notification when audio is ready
   useEffect(() => {
     if (isReady) {
       setShowNotification(true)
-      
-      // Auto-dismiss after 5 seconds
+
       const timer = setTimeout(() => {
         setShowNotification(false)
       }, 5000)
@@ -87,12 +90,12 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
     setIsReady(false)
     
     try {
-      const response = await axios.post(`${API_URL}/api/audio`, {
-        text,
-        voice: selectedVoice
-      })
-      
-      const audioData = atob(response.data.audio)
+      const response = await authPost<{ audio: string; cost?: number }>(
+        `${API_URL}/api/audio`,
+        { text, voice: selectedVoice }
+      )
+
+      const audioData = atob(response.audio)
       const audioArray = new Uint8Array(audioData.length)
       for (let i = 0; i < audioData.length; i++) {
         audioArray[i] = audioData.charCodeAt(i)
@@ -101,10 +104,25 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
       const url = URL.createObjectURL(audioBlob)
       
       setAudioUrl(url)
-      setCost(response.data.cost)
+      setCost(response.cost ?? 0)
       
     } catch (error) {
-      console.error('Audio generation failed:', error)
+      // This used to console.error and nothing else, so a failure just stopped
+      // the spinner with no explanation on screen.
+      if (error instanceof RateLimitedError) {
+        toast({
+          title: "Audio limit reached",
+          description: error.message,
+          variant: "destructive"
+        })
+      } else {
+        console.error('Audio generation failed:', error)
+        toast({
+          title: "Couldn't generate audio",
+          description: "Something went wrong. Please try again.",
+          variant: "destructive"
+        })
+      }
     } finally {
       setIsGenerating(false)
     }
