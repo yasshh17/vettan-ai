@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Mic, MicOff } from 'lucide-react'
+import { refreshHistory } from '@/lib/api'
+import { authFetch } from '@/lib/auth-fetch'
 
-// Voice mode states
 type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking'
 
 interface VoiceModeProps {
@@ -22,25 +23,21 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
   const animationFrameRef = useRef<number>(0)
   const isInitializedRef = useRef(false)
 
-  // Process voice input and get AI response
   const processVoiceInput = async (text: string) => {
     if (!text.trim()) return
-    
+
     setState('processing')
     setSourceCount(0)
-    
-    // Stop recognition during processing
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop()
       } catch (e) {
-        // Ignore
       }
     }
 
     try {
-      // Call your research API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/research`, {
+      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/research`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -51,19 +48,16 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
       })
 
       const data = await response.json()
-      
-      // Update source count
+
+      // Refresh the sidebar history so the new session shows up immediately
+      refreshHistory()
+
       setSourceCount(data.citations?.length || 0)
-      
-      // Set response text
       setResponse(data.output)
-      
-      // Speak the response
       await speakResponse(data.output)
-      
+
     } catch (error) {
       console.error('Voice processing error:', error)
-      // Restart listening on error
       setTimeout(() => {
         if (recognitionRef.current && isOpen) {
           try {
@@ -77,18 +71,15 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     }
   }
 
-  // Text-to-Speech
   const speakResponse = async (text: string) => {
     setState('speaking')
 
-    // Use Web Speech API (browser TTS)
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.rate = 1.1
     utterance.pitch = 1.0
     utterance.volume = 1.0
 
     utterance.onend = () => {
-      // Auto-resume listening after speaking
       setTimeout(() => {
         if (recognitionRef.current && isOpen) {
           try {
@@ -105,7 +96,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     window.speechSynthesis.speak(utterance)
   }
 
-  // Initialize Speech Recognition
   useEffect(() => {
     if (typeof window === 'undefined' || !isOpen) return
 
@@ -133,17 +123,14 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
           .join('')
         
         setTranscript(transcript)
-        
-        // If final result, process it
+
         if (event.results[event.results.length - 1].isFinal) {
-          console.log('Final transcript:', transcript)
           processVoiceInput(transcript)
         }
       }
 
       recognitionRef.current.onend = () => {
         console.log('Recognition ended, current state:', state)
-        // Only restart if we're still supposed to be listening
         if (state === 'listening' && isOpen) {
           setTimeout(() => {
             if (recognitionRef.current && isOpen) {
@@ -165,7 +152,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
           setState('idle')
           alert('Microphone access denied. Please enable microphone permissions in your browser settings.')
         } else if (event.error !== 'aborted') {
-          // Try to restart on other errors
           setTimeout(() => {
             if (recognitionRef.current && isOpen && state === 'listening') {
               try {
@@ -204,7 +190,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     }
   }, [isOpen, state])
 
-  // Cleanup when closed
   useEffect(() => {
     if (!isOpen) {
       isInitializedRef.current = false
@@ -212,7 +197,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
         try {
           recognitionRef.current.stop()
         } catch (e) {
-          // Ignore
         }
       }
       window.speechSynthesis.cancel()
@@ -254,7 +238,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     }
   }
 
-  // Particle visualization
   useEffect(() => {
     if (!isOpen || !canvasRef.current) return
 
@@ -262,11 +245,9 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // Set canvas size
     canvas.width = 400
     canvas.height = 400
 
-    // Particle system
     const particles: Array<{
       x: number
       y: number
@@ -279,7 +260,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     const centerX = canvas.width / 2
     const centerY = canvas.height / 2
 
-    // Initialize particles
     for (let i = 0; i < particleCount; i++) {
       const angle = Math.random() * Math.PI * 2
       const distance = Math.random() * 150
@@ -292,13 +272,11 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
       })
     }
 
-    // Animation loop
     const animate = () => {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.05)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
       particles.forEach(particle => {
-        // Move particle
         particle.x += particle.vx
         particle.y += particle.vy
 
@@ -306,23 +284,20 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
         const dx = centerX - particle.x
         const dy = centerY - particle.y
         const distance = Math.sqrt(dx * dx + dy * dy)
-        
+
         if (distance > 150) {
           particle.vx += dx * 0.0001
           particle.vy += dy * 0.0001
         }
 
-        // Add energy based on state
         if (state === 'listening' || state === 'speaking') {
           particle.vx += (Math.random() - 0.5) * 0.1
           particle.vy += (Math.random() - 0.5) * 0.1
         }
 
-        // Damping
         particle.vx *= 0.99
         particle.vy *= 0.99
 
-        // Draw particle
         const alpha = state === 'listening' ? 0.8 : state === 'speaking' ? 0.6 : 0.4
         ctx.fillStyle = state === 'listening' 
           ? `rgba(168, 85, 247, ${alpha})` 
@@ -347,14 +322,12 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     }
   }, [isOpen, state])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop()
         } catch (e) {
-          // Ignore
         }
       }
       window.speechSynthesis.cancel()

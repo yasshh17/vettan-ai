@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # Frontend (npm)
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # Cut down PR noise: routine patch/minor bumps land in one PR per week
+      # instead of one per package. Majors (e.g. the eventual Next 16) still
+      # get their own PR, since those need a deliberate look.
+      routine-updates:
+        update-types: ["minor", "patch"]
+
+  # Backend (pip)
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      routine-updates:
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions themselves (e.g. actions/checkout, gitleaks-action)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel a still-running run for the same branch/PR when a new push arrives,
+# instead of letting two runs race each other.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (build, types, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (from the committed lockfile)
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Regression tests (security + unit)
+        run: npm test
+
+      - name: Build
+        # NEXT_PUBLIC_* values here are placeholders for a production build
+        # check only — no secret is needed since the anon key / API URL are
+        # public by design, and no server is started against them.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: npm run build
+
+      - name: Dependency audit (fails on critical)
+        # TODO: tighten to --audit-level=high once next is upgraded past 16 —
+        # today there is one known, accepted "high" (postcss, bundled inside
+        # next's own dependency tree; GHSA-r28c-9q8g-f849 and related). Its
+        # only fix is next's next major, which is a deliberate separate
+        # upgrade, not something to silently block every PR on in the
+        # meantime. `critical` still catches a genuinely new, worse finding.
+        run: npm audit --audit-level=critical
+
+  backend:
+    name: Backend (tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Tenant isolation + schema-readiness tests
+        # No Supabase/OpenAI/Tavily credentials are provided on purpose: both
+        # suites stub out the data layer and assert against a disconnected
+        # (degraded-mode) app, so they must pass with no external services
+        # reachable at all. See the top-of-file comments in each test.
+        run: python tests/test_isolation.py
+
+      - name: Rate limiter tests
+        run: python tests/test_rate_limit.py
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
