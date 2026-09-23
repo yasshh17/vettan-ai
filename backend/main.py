@@ -19,7 +19,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from agent.cached_research_agent import cached_research
 from agent.research_pipeline import research_complete, handle_followup
 from database.supabase_client_v2 import get_database_v2
 from audio.tts import get_tts
