@@ -380,3 +380,76 @@
     font-size: 16px !important;
   }
 }
+
+/* Auth page animated background */
+@keyframes auth-dots {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-auth-dots {
+  animation: auth-dots 5s ease-in-out infinite;
+}
+
+@keyframes auth-rise {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: translateX(-50%) scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.18);
+  }
+}
+
+.animate-auth-rise {
+  animation: auth-rise 4.5s ease-in-out infinite;
+}
+
+@keyframes auth-drift-slow {
+  0%,
+  100% {
+    transform: translate(-50%, 0);
+  }
+
+  50% {
+    transform: translate(calc(-50% + 40px), 30px);
+  }
+}
+
+.animate-auth-drift-slow {
+  animation: auth-drift-slow 18s ease-in-out infinite;
+}
+
+@keyframes auth-drift-slower {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  50% {
+    transform: translate(50px, -40px);
+  }
+}
+
+.animate-auth-drift-slower {
+  animation: auth-drift-slower 22s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .animate-auth-dots,
+  .animate-auth-rise,
+  .animate-auth-drift-slow,
+  .animate-auth-drift-slower {
+    animation: none;
+  }
+}

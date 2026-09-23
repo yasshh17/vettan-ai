@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, AudioWaveform, ArrowUp } from 'lucide-react';
 
-// Extend Window interface for Speech Recognition
 declare global {
   interface Window {
     SpeechRecognition: any;
@@ -25,7 +24,6 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
   const micTooltipTimer = useRef<number | null>(null);
   const voiceModeTooltipTimer = useRef<number | null>(null);
 
-  // Initialize speech recognition
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -80,14 +78,11 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
 
   const handleVoiceMode = () => {
     setIsVoiceMode(!isVoiceMode);
-    
-    // In production, integrate with your voice conversation API
+
     if (!isVoiceMode) {
       console.log('Voice mode activated');
-      // Initialize continuous voice conversation
     } else {
       console.log('Voice mode deactivated');
-      // Close voice conversation
     }
   };
 
