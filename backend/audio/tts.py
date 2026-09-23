@@ -33,7 +33,6 @@ class VettanTTS:
     RECOMMENDED_MAX = 15000  # ~10 min audio
     
     def __init__(self):
-        """Initialize OpenAI client"""
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY required")
@@ -48,32 +47,21 @@ class VettanTTS:
         model: str = "tts-1"
     ) -> Optional[bytes]:
         """
-        Generate audio for FULL-LENGTH text
-        Automatically chunks if needed and concatenates seamlessly
-        
-        Args:
-            text: Full text to convert (up to 15,000 chars)
-            voice: Voice name
-            model: TTS model
-            
-        Returns:
-            Complete audio bytes (full report)
+        Generate audio for text up to 15,000 chars, chunking and
+        concatenating automatically if it exceeds a single TTS request.
         """
         try:
             original_length = len(text)
-            
-            # Warn if extremely long
+
             if len(text) > self.RECOMMENDED_MAX:
                 print(f"⚠️ Report is {len(text):,} chars - truncating to {self.RECOMMENDED_MAX:,} for reasonable listening time")
                 text = text[:self.RECOMMENDED_MAX] + " ...End of report. Download the full text to read complete content."
-            
+
             print(f"📝 Generating audio for {len(text):,} characters...")
-            
-            # Single request if fits
+
             if len(text) <= self.SAFE_CHUNK_SIZE:
                 return self._generate_single(text, voice, model)
-            
-            # Multi-chunk for long text
+
             print(f"📦 Text exceeds single request limit - using chunked generation")
             return self._generate_chunked(text, voice, model)
             
@@ -82,7 +70,6 @@ class VettanTTS:
             return None
     
     def _generate_single(self, text: str, voice: str, model: str) -> Optional[bytes]:
-        """Generate audio in single request"""
         print(f"🎵 Generating {len(text):,} chars with '{voice}'...")
         
         response = self.client.audio.speech.create(
@@ -98,15 +85,11 @@ class VettanTTS:
         return audio_bytes if audio_bytes and len(audio_bytes) > 1000 else None
     
     def _generate_chunked(self, text: str, voice: str, model: str) -> Optional[bytes]:
-        """
-        Generate audio for long text via chunking + concatenation
-        """
         # Split into safe-sized chunks at paragraph boundaries
         chunks = self._smart_chunk(text, max_size=self.SAFE_CHUNK_SIZE)
-        
+
         print(f"📦 Split into {len(chunks)} chunks for generation")
-        
-        # Generate audio for each chunk
+
         audio_parts: List[bytes] = []
         
         for i, chunk in enumerate(chunks, 1):
@@ -126,13 +109,11 @@ class VettanTTS:
                 
             except Exception as e:
                 print(f"   ❌ Chunk {i} failed: {e}")
-                # If one chunk fails, return what we have so far
                 if audio_parts:
                     print(f"   ⚠️ Returning partial audio ({i-1} chunks)")
                     break
                 return None
-        
-        # Concatenate all chunks
+
         if not audio_parts:
             return None
         
@@ -153,23 +134,19 @@ class VettanTTS:
         """
         chunks: List[str] = []
         current_chunk = ""
-        
-        # Split by paragraphs
+
         paragraphs = re.split(r'\n\n+', text)
-        
+
         for para in paragraphs:
             para = para.strip()
             if not para:
                 continue
-            
-            # If adding paragraph exceeds limit
+
             if len(current_chunk) + len(para) + 2 > max_size:
-                # Save current chunk if it has content
                 if current_chunk:
                     chunks.append(current_chunk.strip())
                     current_chunk = ""
-                
-                # If single paragraph is too long, split by sentences
+
                 if len(para) > max_size:
                     sentences = re.split(r'(?<=[.!?])\s+', para)
                     for sentence in sentences:
@@ -183,8 +160,7 @@ class VettanTTS:
                     current_chunk = para
             else:
                 current_chunk += "\n\n" + para if current_chunk else para
-        
-        # Add final chunk
+
         if current_chunk:
             chunks.append(current_chunk.strip())
         
@@ -203,18 +179,16 @@ class VettanTTS:
         text = re.sub(r'\[Source:[^\]]+\]', '', text)
         text = re.sub(r'```[^`]*```', '', text)
         text = re.sub(r'`([^`]+)`', r'\1', text)
-        
+
         # Clean whitespace but preserve paragraph breaks
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = re.sub(r'[ \t]+', ' ', text)
-        
-        # Add intro
+
         text = f"Here is your Vettan AI research report. {text.strip()}"
         
         return text
     
     def estimate_cost(self, text: str) -> float:
-        """Estimate cost for full text"""
         char_count = min(len(text), self.RECOMMENDED_MAX)
         return (char_count / 1_000_000) * 15.0
 
@@ -223,7 +197,6 @@ _tts_instance = None
 
 
 def get_tts() -> VettanTTS:
-    """Get TTS instance"""
     global _tts_instance
     if _tts_instance is None:
         _tts_instance = VettanTTS()

@@ -4,21 +4,16 @@ uvicorn[standard]==0.27.0
 pydantic==2.10.3
 python-dotenv==1.0.1
 
-# LangChain
-langchain==0.1.20
-langchain-openai==0.1.7
-langchain-community==0.0.38
-langchain-core==0.1.53
-langchain-text-splitters==0.0.2
-
 # OpenAI
 openai==1.109.1
 
-# Search
-tavily-python==0.3.3
-beautifulsoup4==4.12.3
-requests==2.31.0
-lxml==5.1.0
+# The live research pipeline (agent/research_pipeline.py) calls the Tavily
+# HTTP API directly via httpx, not through the tavily-python SDK. LangChain,
+# tavily-python, beautifulsoup4, requests and lxml were only used by the
+# LangChain ReAct agent + scraper path, which has been removed (it held an
+# unmitigated SSRF — see agent/research_agent.py / tools/scraper.py in git
+# history) and was never wired into any live endpoint. httpx is pulled in
+# transitively by openai/supabase.
 
 # Token tracking
 tiktoken==0.8.0
