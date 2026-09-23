@@ -1,8 +1,8 @@
 # Core Backend
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic==2.10.3
-python-dotenv==1.0.1
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+pydantic==2.13.5
+python-dotenv==1.2.3
 
 # OpenAI
 openai==1.109.1
@@ -16,11 +16,11 @@ openai==1.109.1
 # transitively by openai/supabase.
 
 # Token tracking
-tiktoken==0.8.0
+tiktoken==0.14.0
 
 
 # Database
-supabase==2.9.0
+supabase==2.31.0
 websockets==15.0.1
 
 # Rate limiting is hand-rolled in utils/rate_limit.py — no dependency needed.
