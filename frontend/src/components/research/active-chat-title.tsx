@@ -11,12 +11,10 @@ export function ActiveChatTitle({ title, isVisible }: ActiveChatTitleProps) {
   const [displayTitle, setDisplayTitle] = useState(title)
   const [isAnimating, setIsAnimating] = useState(false)
   
-  // Smooth title transition
   useEffect(() => {
     if (title !== displayTitle) {
       setIsAnimating(true)
-      
-      // Fade out → update → fade in
+
       setTimeout(() => {
         setDisplayTitle(title)
         setIsAnimating(false)

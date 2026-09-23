@@ -218,3 +218,8 @@ docs/.doctrees/
 
 # Sentry
 .sentryclirc
+.gstack/
+
+# AI coding-agent tooling config (may contain live API keys, e.g. MCP server headers)
+.codex/
+.serena/

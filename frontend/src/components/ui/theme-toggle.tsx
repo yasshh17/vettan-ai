@@ -8,7 +8,6 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
   const [mounted, setMounted] = useState(false)
 
-  // Avoid hydration mismatch
   useEffect(() => {
     setMounted(true)
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'dark'
