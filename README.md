@@ -843,6 +843,11 @@ OPENAI_MODEL=gpt-4o-mini
 MAX_ITERATIONS=10
 SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_KEY=eyJhbGc...
+
+# Service role key, used ONLY for auth.admin.delete_user during account
+# deletion. Without this, GET /health reports account_deletion_configured:
+# false and every delete-account request 503s.
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
 ```
 
 **Configuration Files:**

@@ -441,10 +441,15 @@ async def health_check():
 
     # A reachable database with the wrong schema is not healthy: saves fail and
     # history reads empty. Report that distinctly rather than as "healthy".
+    #
+    # account_deletion_configured is informational only and does not affect
+    # `status`: it was missing on Render for a while with nothing surfacing it
+    # anywhere except a 503 on the delete-account button itself.
     return {
         "status": "healthy" if (db_status and schema_ready) else "degraded",
         "database": db_status,
         "schema_ready": schema_ready,
+        "account_deletion_configured": get_admin_client() is not None,
         **(
             {}
             if schema_ready
