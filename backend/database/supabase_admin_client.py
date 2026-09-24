@@ -24,13 +24,17 @@ def get_admin_client() -> Optional[Client]:
     """
     Get a service-role Supabase client with lazy initialization.
     Returns None if SUPABASE_SERVICE_ROLE_KEY is not configured (graceful degradation).
+
+    A failed attempt (missing config, or create_client() raising) is NOT cached:
+    the next call retries from scratch. Only a successful client is memoized for
+    the life of the process. create_client() does no network I/O — it only
+    validates the URL/key shape and builds local sub-clients — so retrying on
+    every call while misconfigured/down costs nothing and needs no backoff.
     """
     global _admin_client, _admin_client_initialized
 
     if _admin_client_initialized:
         return _admin_client
-
-    _admin_client_initialized = True
 
     url = os.getenv("SUPABASE_URL")
     service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -44,6 +48,7 @@ def get_admin_client() -> Optional[Client]:
 
     try:
         _admin_client = create_client(url, service_role_key)
+        _admin_client_initialized = True
         return _admin_client
     except Exception as e:
         logger.error(f"Failed to initialize Supabase admin client: {e}")
