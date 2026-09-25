@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import useSWR from 'swr'
 import { Clock, MoreHorizontal, Star, Pencil, Trash2, SquarePen, Search, X, PanelLeft, Menu, Loader2, Check, AlertCircle } from "lucide-react"
 import { UserMenu } from "@/components/auth/user-menu"
@@ -193,6 +193,177 @@ const RenameModal = ({
     </>
   )
 }
+
+interface SessionItemProps {
+  session: Session
+  isFavorite?: boolean
+  isActive: boolean
+  isDropdownOpen: boolean
+  isHovered: boolean
+  isDeleting: boolean
+  isActionLoading: boolean
+  onSelect: (session: Session) => void
+  onMouseEnter: (id: string) => void
+  onMouseLeave: () => void
+  onToggleDropdown: (id: string, e: React.MouseEvent) => void
+  onFavorite: (session: Session, e: React.MouseEvent) => void
+  onRenameInit: (session: Session, e: React.MouseEvent) => void
+  onDeleteInit: (id: string, e: React.MouseEvent) => void
+  onDeleteConfirm: (id: string) => void
+  onDeleteCancel: () => void
+}
+
+const SessionItem = memo(function SessionItem({
+  session,
+  isFavorite,
+  isActive,
+  isDropdownOpen,
+  isHovered,
+  isDeleting,
+  isActionLoading,
+  onSelect,
+  onMouseEnter,
+  onMouseLeave,
+  onToggleDropdown,
+  onFavorite,
+  onRenameInit,
+  onDeleteInit,
+  onDeleteConfirm,
+  onDeleteCancel
+}: SessionItemProps) {
+  if (isDeleting) {
+    return (
+      <div className="relative p-3 rounded-lg bg-red-950/20 border border-red-900/50 animate-in fade-in duration-200">
+        <div className="text-sm text-red-300 mb-3 font-medium">
+          Delete this conversation?
+        </div>
+        <div className="text-xs text-red-400/80 mb-3 line-clamp-1">
+          {session.query}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDeleteConfirm(session.id)
+            }}
+            disabled={isActionLoading}
+            className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isActionLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Deleting...</span>
+              </>
+            ) : (
+              'Delete'
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDeleteCancel()
+            }}
+            disabled={isActionLoading}
+            className="flex-1 px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-lg transition-all disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => onMouseEnter(session.id)}
+      onMouseLeave={() => onMouseLeave()}
+    >
+      <div
+        onClick={(e) => {
+          const target = e.target as HTMLElement
+          if (!target.closest('[aria-label="Chat actions"]') && !target.closest('[role="menu"]')) {
+            onSelect(session)
+          }
+        }}
+        className={`relative w-full text-left p-3 pr-12 rounded-lg transition-all duration-200 cursor-pointer ${isActive ? 'bg-neutral-800 text-neutral-100 font-medium' : 'bg-neutral-800/40 hover:bg-neutral-800/70 text-neutral-400'}`}
+      >
+        <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1">
+          <Clock className="h-3 w-3 flex-shrink-0" />
+          <span>{formatTimeAgo(session.created_at)}</span>
+        </div>
+        <div className={`text-sm line-clamp-2 transition-colors ${isFavorite ? 'flex items-center gap-1.5' : ''} ${isActive ? 'text-neutral-100' : isHovered ? 'text-neutral-200' : 'text-neutral-400'}`}>
+          {isFavorite && <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500 flex-shrink-0" />}
+          <span className="truncate">{session.query}</span>
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleDropdown(session.id, e)
+          }}
+          disabled={isActionLoading}
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200 z-20 text-neutral-400 hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            opacity: isDropdownOpen || isHovered || isActionLoading ? 1 : 0,
+            backgroundColor: isDropdownOpen ? 'rgb(64 64 64)' : undefined
+          }}
+          aria-label="Chat actions"
+        >
+          {isActionLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <MoreHorizontal className="w-4 h-4" />
+          )}
+        </button>
+      </div>
+
+      {isDropdownOpen && (
+          <div
+            role="menu"
+            className="absolute right-2 top-full mt-1 w-48 bg-neutral-900 border border-neutral-700 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.6)] py-1 z-[100] animate-in fade-in slide-in-from-top-2 duration-200"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+          <button
+            type="button"
+            onClick={(e) => onFavorite(session, e)}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="w-full px-3 py-2.5 flex items-center gap-3 text-[#E5E5E5] text-sm hover:bg-[#333333] transition-colors text-left"
+            role="menuitem"
+          >
+            <Star className="w-5 h-5 flex-shrink-0" fill={session.is_favorite ? "currentColor" : "none"} />
+            <span>{session.is_favorite ? 'Unfavorite' : 'Favorite'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => onRenameInit(session, e)}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="w-full px-3 py-2.5 flex items-center gap-3 text-[#E5E5E5] text-sm hover:bg-[#333333] transition-colors text-left"
+            role="menuitem"
+          >
+            <Pencil className="w-5 h-5 flex-shrink-0" />
+            <span>Rename</span>
+          </button>
+          <div className="h-px bg-[#3A3A3A] my-1" />
+          <button
+            type="button"
+            onClick={(e) => onDeleteInit(session.id, e)}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="w-full px-3 py-2.5 flex items-center gap-3 text-red-400 text-sm hover:bg-[#333333] transition-colors text-left"
+            role="menuitem"
+          >
+            <Trash2 className="w-5 h-5 flex-shrink-0" />
+            <span>Delete</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+})
 
 export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: SidebarProps) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -457,148 +628,7 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
     setDeleteConfirmOpen(null)
   }, [])
 
-  const SessionItem = useCallback(({ session, isFavorite }: { session: Session; isFavorite?: boolean }) => {
-    const isActive = activeSessionId === session.id
-    const isDropdownOpenForThis = dropdownOpen === session.id
-    const isHovered = hoveredSessionId === session.id
-    const isDeleting = deleteConfirmOpen === session.id
-    const isActionLoading = loadingAction?.includes(session.id)
-    
-    if (isDeleting) {
-      return (
-        <div className="relative p-3 rounded-lg bg-red-950/20 border border-red-900/50 animate-in fade-in duration-200">
-          <div className="text-sm text-red-300 mb-3 font-medium">
-            Delete this conversation?
-          </div>
-          <div className="text-xs text-red-400/80 mb-3 line-clamp-1">
-            {session.query}
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleDeleteConfirm(session.id)
-              }}
-              disabled={isActionLoading}
-              className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isActionLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Deleting...</span>
-                </>
-              ) : (
-                'Delete'
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleDeleteCancel()
-              }}
-              disabled={isActionLoading}
-              className="flex-1 px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-lg transition-all disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )
-    }
-    
-    return (
-      <div 
-        className="relative"
-        onMouseEnter={() => setHoveredSessionId(session.id)}
-        onMouseLeave={() => setHoveredSessionId(null)}
-      >
-        <div 
-          onClick={(e) => {
-            const target = e.target as HTMLElement
-            if (!target.closest('[aria-label="Chat actions"]') && !target.closest('[role="menu"]')) {
-              handleHistoryClick(session)
-            }
-          }}
-          className={`relative w-full text-left p-3 pr-12 rounded-lg transition-all duration-200 cursor-pointer ${isActive ? 'bg-neutral-800 text-neutral-100 font-medium' : 'bg-neutral-800/40 hover:bg-neutral-800/70 text-neutral-400'}`}
-        >
-          <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1">
-            <Clock className="h-3 w-3 flex-shrink-0" />
-            <span>{formatTimeAgo(session.created_at)}</span>
-          </div>
-          <div className={`text-sm line-clamp-2 transition-colors ${isFavorite ? 'flex items-center gap-1.5' : ''} ${isActive ? 'text-neutral-100' : isHovered ? 'text-neutral-200' : 'text-neutral-400'}`}>
-            {isFavorite && <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500 flex-shrink-0" />}
-            <span className="truncate">{session.query}</span>
-          </div>
-          
-          <button 
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleDropdown(session.id, e)
-            }}
-            disabled={isActionLoading}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200 z-20 text-neutral-400 hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ 
-              opacity: isDropdownOpenForThis || isHovered || isActionLoading ? 1 : 0,
-              backgroundColor: isDropdownOpenForThis ? 'rgb(64 64 64)' : undefined
-            }}
-            aria-label="Chat actions"
-          >
-            {isActionLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <MoreHorizontal className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-        
-        {isDropdownOpenForThis && (
-            <div 
-              role="menu" 
-              className="absolute right-2 top-full mt-1 w-48 bg-neutral-900 border border-neutral-700 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.6)] py-1 z-[100] animate-in fade-in slide-in-from-top-2 duration-200" 
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-            <button 
-              type="button"
-              onClick={(e) => handleFavorite(session, e)}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2.5 flex items-center gap-3 text-[#E5E5E5] text-sm hover:bg-[#333333] transition-colors text-left" 
-              role="menuitem"
-            >
-              <Star className="w-5 h-5 flex-shrink-0" fill={session.is_favorite ? "currentColor" : "none"} />
-              <span>{session.is_favorite ? 'Unfavorite' : 'Favorite'}</span>
-            </button>
-            <button 
-              type="button"
-              onClick={(e) => handleRenameInit(session, e)}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2.5 flex items-center gap-3 text-[#E5E5E5] text-sm hover:bg-[#333333] transition-colors text-left" 
-              role="menuitem"
-            >
-              <Pencil className="w-5 h-5 flex-shrink-0" />
-              <span>Rename</span>
-            </button>
-            <div className="h-px bg-[#3A3A3A] my-1" />
-            <button 
-              type="button"
-              onClick={(e) => handleDeleteInit(session.id, e)}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2.5 flex items-center gap-3 text-red-400 text-sm hover:bg-[#333333] transition-colors text-left" 
-              role="menuitem"
-            >
-              <Trash2 className="w-5 h-5 flex-shrink-0" />
-              <span>Delete</span>
-            </button>
-          </div>
-        )}
-      </div>
-    )
-  }, [activeSessionId, dropdownOpen, hoveredSessionId, deleteConfirmOpen, loadingAction, handleHistoryClick, toggleDropdown, handleFavorite, handleRenameInit, handleDeleteInit, handleDeleteConfirm, handleDeleteCancel])
-
-  const SidebarContent = () => (
+  const sidebarContent = (
     <>
       <div className="p-2 border-b border-neutral-800/50 flex-shrink-0">
         <div className={`flex items-center mb-2 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
@@ -697,7 +727,25 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
 
                 <div className="space-y-1">
                   {favoriteSessions.map((session) => (
-                    <SessionItem key={session.id} session={session} isFavorite />
+                    <SessionItem
+                      key={session.id}
+                      session={session}
+                      isFavorite
+                      isActive={activeSessionId === session.id}
+                      isDropdownOpen={dropdownOpen === session.id}
+                      isHovered={hoveredSessionId === session.id}
+                      isDeleting={deleteConfirmOpen === session.id}
+                      isActionLoading={!!loadingAction?.includes(session.id)}
+                      onSelect={handleHistoryClick}
+                      onMouseEnter={setHoveredSessionId}
+                      onMouseLeave={() => setHoveredSessionId(null)}
+                      onToggleDropdown={toggleDropdown}
+                      onFavorite={handleFavorite}
+                      onRenameInit={handleRenameInit}
+                      onDeleteInit={handleDeleteInit}
+                      onDeleteConfirm={handleDeleteConfirm}
+                      onDeleteCancel={handleDeleteCancel}
+                    />
                   ))}
                 </div>
               </div>
@@ -714,7 +762,24 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
 
               <div className="space-y-1">
                 {recentSessions.map((session) => (
-                  <SessionItem key={session.id} session={session} />
+                  <SessionItem
+                    key={session.id}
+                    session={session}
+                    isActive={activeSessionId === session.id}
+                    isDropdownOpen={dropdownOpen === session.id}
+                    isHovered={hoveredSessionId === session.id}
+                    isDeleting={deleteConfirmOpen === session.id}
+                    isActionLoading={!!loadingAction?.includes(session.id)}
+                    onSelect={handleHistoryClick}
+                    onMouseEnter={setHoveredSessionId}
+                    onMouseLeave={() => setHoveredSessionId(null)}
+                    onToggleDropdown={toggleDropdown}
+                    onFavorite={handleFavorite}
+                    onRenameInit={handleRenameInit}
+                    onDeleteInit={handleDeleteInit}
+                    onDeleteConfirm={handleDeleteConfirm}
+                    onDeleteCancel={handleDeleteCancel}
+                  />
                 ))}
                 
                 {recentSessions.length === 0 && !isLoading && (
@@ -784,13 +849,13 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
       <aside 
         className={`fixed left-0 top-0 h-screen z-50 bg-neutral-900 border-r border-neutral-800 hidden lg:flex flex-col transition-all duration-300 ease-out ${isExpanded ? 'w-64' : 'w-16'}`}
       >
-        <SidebarContent />
+        {sidebarContent}
       </aside>
 
-      <aside 
+      <aside
         className={`fixed left-0 top-0 h-screen z-[1000] bg-neutral-900 border-r border-neutral-800 flex lg:hidden flex-col w-64 transition-transform duration-300 ease-out ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <SidebarContent />
+        {sidebarContent}
       </aside>
     </>
   )
