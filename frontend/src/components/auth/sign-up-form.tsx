@@ -7,7 +7,6 @@ import { Loader2, MailCheck } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
-import { GoogleButton } from "@/components/auth/google-button"
 import { validateEmail, validateName, validatePassword } from "@/components/auth/validation"
 
 export function SignUpForm() {
@@ -96,13 +95,6 @@ export function SignUpForm() {
   return (
     <>
       <AuthCard>
-        <GoogleButton />
-        <div className="my-6 flex items-center gap-4">
-          <div className="h-px flex-1 bg-[rgba(255,255,255,0.08)]" />
-          <span className="text-[13px] text-[#6B6B78]">or</span>
-          <div className="h-px flex-1 bg-[rgba(255,255,255,0.08)]" />
-        </div>
-
         <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
           {formError && (
             <div className="rounded-lg border border-[#f87171]/30 bg-[#1e1a1a] px-4 py-3 text-[14px] text-[#f87171]">
