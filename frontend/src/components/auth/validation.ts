@@ -16,3 +16,9 @@ export function validateName(name: string): string | null {
   if (!name.trim()) return "Full name is required."
   return null
 }
+
+export function validatePasswordConfirmation(password: string, confirm: string): string | null {
+  if (!confirm) return "Please confirm your password."
+  if (password !== confirm) return "Passwords do not match."
+  return null
+}

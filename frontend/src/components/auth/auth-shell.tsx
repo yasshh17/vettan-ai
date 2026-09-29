@@ -2,7 +2,7 @@ import Link from "next/link"
 import { AuthBackground } from "@/components/auth/auth-background"
 
 interface AuthShellProps {
-  mode: "sign-in" | "sign-up"
+  mode: "sign-in" | "sign-up" | "forgot-password" | "reset-password"
   title: string
   subtitle: string
   children: React.ReactNode
@@ -11,6 +11,8 @@ interface AuthShellProps {
 const switchCopy = {
   "sign-in": { text: "Don't have an account?", label: "Sign up", href: "/sign-up" },
   "sign-up": { text: "Already have an account?", label: "Sign in", href: "/sign-in" },
+  "forgot-password": { text: "Remembered your password?", label: "Sign in", href: "/sign-in" },
+  "reset-password": { text: "Remembered your password?", label: "Sign in", href: "/sign-in" },
 }
 
 export function AuthShell({ mode, title, subtitle, children }: AuthShellProps) {
