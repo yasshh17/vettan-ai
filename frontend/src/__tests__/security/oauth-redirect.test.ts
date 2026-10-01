@@ -48,6 +48,11 @@ describe("OAuth callback redirect (open-redirect regression)", () => {
     expect(res.headers.get("location")).toBe("https://app.example.com/app/settings")
   })
 
+  it("sends password-recovery links to /reset-password", async () => {
+    const res = await GET(callbackRequest("next=%2Freset-password"))
+    expect(res.headers.get("location")).toBe("https://app.example.com/reset-password")
+  })
+
   it("defaults to /app when next is absent", async () => {
     const res = await GET(callbackRequest(""))
     expect(res.headers.get("location")).toBe("https://app.example.com/app")
