@@ -21,5 +21,9 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/sign-in?error=oauth`)
+  // Reached when the link was expired or already used (Supabase then sends
+  // ?error=... instead of ?code=) or the code exchange failed. For sign-up
+  // links the email is already confirmed by this point, so the sign-in page
+  // tells the user to just sign in with their password.
+  return NextResponse.redirect(`${origin}/sign-in?error=link_invalid`)
 }
