@@ -83,6 +83,9 @@ jobs:
       - name: Rate limiter tests
         run: python tests/test_rate_limit.py
 
+      - name: Account deletion tests
+        run: python tests/test_account_delete.py
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

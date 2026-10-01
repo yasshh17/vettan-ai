@@ -85,15 +85,22 @@ export const api = {
     return data.sessions
   },
 
-  deleteAccount: async (accessToken?: string): Promise<{ success: boolean; message: string }> => {
-    // Callers that already hold a token may pass it; otherwise the shared
-    // helper reads the current session.
+  deleteAccount: async (
+    password: string,
+    accessToken?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    // The backend re-checks the password: a session token alone can't delete
+    // the account. Callers that already hold a token may pass it; otherwise
+    // the shared helper reads the current session.
     if (accessToken) {
       const response = await axios.delete(`${API_BASE_URL}/api/account`, {
         headers: { Authorization: `Bearer ${accessToken}` },
+        data: { password },
       })
       return response.data
     }
-    return authDelete<{ success: boolean; message: string }>(`${API_BASE_URL}/api/account`)
+    return authDelete<{ success: boolean; message: string }>(`${API_BASE_URL}/api/account`, {
+      data: { password },
+    })
   }
 }
