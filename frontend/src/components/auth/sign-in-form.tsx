@@ -9,12 +9,12 @@ import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
 import { validateEmail, validatePassword } from "@/components/auth/validation"
 
-export function SignInForm() {
+export function SignInForm({ initialError = "" }: { initialError?: string }) {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [errors, setErrors] = useState<{ email?: string | null; password?: string | null }>({})
-  const [formError, setFormError] = useState("")
+  const [formError, setFormError] = useState(initialError)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
