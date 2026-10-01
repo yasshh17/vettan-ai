@@ -43,22 +43,19 @@ export function SignUpForm() {
         password,
         options: {
           data: { full_name: fullName.trim() },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/app`,
         },
       })
 
-      if (error) {
-        setFormError(
-          /registered|already/i.test(error.message)
-            ? "An account with this email already exists."
-            : error.message
-        )
-        setLoading(false)
-        return
-      }
+      // An already-registered email gets the same "check your email" screen as
+      // a new one, so this form can't be used to find out who has an account.
+      // (Supabase signals it as an error or as a user with no identities.)
+      const alreadyRegistered =
+        (error && /registered|already/i.test(error.message)) ||
+        (data.user?.identities && data.user.identities.length === 0)
 
-      if (data.user && data.user.identities && data.user.identities.length === 0) {
-        setFormError("An account with this email already exists.")
+      if (error && !alreadyRegistered) {
+        setFormError(error.message)
         setLoading(false)
         return
       }
@@ -85,8 +82,13 @@ export function SignUpForm() {
         </div>
         <h2 className="mt-5 text-[20px] font-semibold text-[#EDEDF2]">Check your email</h2>
         <p className="mt-2 text-[15px] text-[#9B9BA8]">
-          We sent a confirmation link to <span className="text-[#EDEDF2]">{email}</span>. Confirm
-          it to finish setting up your account.
+          If <span className="text-[#EDEDF2]">{email}</span> isn&apos;t already registered, we sent
+          it a confirmation link. Confirm it to finish setting up your account. Already have an
+          account?{" "}
+          <Link href="/sign-in" className="font-medium text-[#9C90FF] hover:text-[#B6ACFF]">
+            Sign in
+          </Link>
+          .
         </p>
       </AuthCard>
     )
@@ -129,7 +131,7 @@ export function SignUpForm() {
             label="Password"
             type="password"
             autoComplete="new-password"
-            placeholder="At least 6 characters"
+            placeholder="At least 8 characters"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             error={errors.password}

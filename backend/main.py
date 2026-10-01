@@ -1224,10 +1224,53 @@ async def update_session(
         logger.error(f"Update failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to update session")
 
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=1024)
+
+
+def _password_matches(user_id: str, password: str) -> bool:
+    """
+    True if `password` is the current password of auth user `user_id`.
+
+    Checked server-side by signing in with a throwaway client, so a stolen
+    access token alone can't delete the account. The throwaway session is
+    revoked straight away (scope "local" only touches that one session).
+    """
+    from supabase import create_client
+
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    admin_client = get_admin_client()
+    if not url or not key or not admin_client:
+        raise HTTPException(status_code=503, detail="Account deletion is not configured on this server")
+
+    email = admin_client.auth.admin.get_user_by_id(user_id).user.email
+    if not email:
+        return False
+
+    # Fresh client per call: sign-in stores a session on the client, so the
+    # shared verification client must never be used for this.
+    probe = create_client(url, key)
+    try:
+        response = probe.auth.sign_in_with_password({"email": email, "password": password})
+    except Exception:
+        return False
+
+    matched = bool(response and response.user and response.user.id == user_id)
+    try:
+        probe.auth.sign_out({"scope": "local"})
+    except Exception:
+        pass
+    return matched
+
+
 @app.delete("/api/account")
-async def delete_account(user: AuthedUser = Depends(account_user)):
+async def delete_account(body: DeleteAccountRequest, user: AuthedUser = Depends(account_user)):
     """
     Delete the authenticated user's Supabase auth account.
+
+    Requires the user's current password in the request body: a valid access
+    token proves a session exists, not that its owner is the one asking.
 
     research_sessions.user_id references auth.users(id) ON DELETE CASCADE, and
     messages.session_id cascades from research_sessions (0001_add_user_id.sql),
@@ -1240,6 +1283,9 @@ async def delete_account(user: AuthedUser = Depends(account_user)):
     admin_client = get_admin_client()
     if not admin_client:
         raise HTTPException(status_code=503, detail="Account deletion is not configured on this server")
+
+    if not await asyncio.to_thread(_password_matches, user_id, body.password):
+        raise HTTPException(status_code=403, detail="Incorrect password")
 
     try:
         logger.info(f"Deleting auth user: {user_id[:8]}...")

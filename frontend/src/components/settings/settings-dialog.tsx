@@ -55,18 +55,20 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
 
   const [changingEmail, setChangingEmail] = useState(false)
   const [newEmail, setNewEmail] = useState("")
+  const [emailChangePassword, setEmailChangePassword] = useState("")
   const [sendingEmailChange, setSendingEmailChange] = useState(false)
 
   const [deleteStep, setDeleteStep] = useState<"idle" | "confirming">("idle")
-  const [confirmEmailInput, setConfirmEmailInput] = useState("")
+  const [deletePassword, setDeletePassword] = useState("")
   const [deleting, setDeleting] = useState(false)
 
   const resetTransientState = () => {
     setName(currentName)
     setChangingEmail(false)
     setNewEmail("")
+    setEmailChangePassword("")
     setDeleteStep("idle")
-    setConfirmEmailInput("")
+    setDeletePassword("")
   }
 
   const handleOpenChange = (next: boolean) => {
@@ -98,6 +100,17 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
     setSendingEmailChange(true)
     try {
       const supabase = createClient()
+      // Re-check the current password so an unattended, signed-in device can't
+      // be used to move the account to someone else's inbox. The server-side
+      // guarantee is Supabase's "Secure email change" (confirm on both addresses).
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email,
+        password: emailChangePassword,
+      })
+      if (reauthError) {
+        toast({ title: "Incorrect password", description: "Check your current password and try again.", variant: "destructive" })
+        return
+      }
       const { error } = await supabase.auth.updateUser({ email: newEmail.trim() })
       if (error) throw error
       toast({
@@ -106,6 +119,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
       })
       setChangingEmail(false)
       setNewEmail("")
+      setEmailChangePassword("")
     } catch (err) {
       toast({
         title: "Couldn't change your email",
@@ -135,7 +149,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
         return
       }
 
-      await api.deleteAccount(session.access_token)
+      await api.deleteAccount(deletePassword, session.access_token)
 
       toast({
         title: "Account deleted",
@@ -149,6 +163,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
       const status = (err as { response?: { status?: number } })?.response?.status
       let description = "Something went wrong. Try again, or contact support if this keeps happening."
       if (status === 401) description = "Your session expired. Sign in again and retry."
+      if (status === 403) description = "Incorrect password. Check it and try again."
       if (status === 503) description = "Account deletion isn't available right now. Contact support."
       toast({ title: "Couldn't delete your account", description, variant: "destructive" })
       setDeleting(false)
@@ -159,9 +174,8 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
   const newEmailValid =
     newEmail.trim().length > 0 &&
     newEmail.includes("@") &&
-    newEmail.trim().toLowerCase() !== email.toLowerCase()
-  const confirmMatches =
-    confirmEmailInput.trim().toLowerCase() === email.toLowerCase() && email.length > 0
+    newEmail.trim().toLowerCase() !== email.toLowerCase() &&
+    emailChangePassword.length > 0
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -234,6 +248,17 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
                   placeholder="you@example.com"
                   className={inputClass}
                 />
+                <label className="text-xs font-medium text-neutral-400" htmlFor="settings-email-password">
+                  Current password
+                </label>
+                <Input
+                  id="settings-email-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={emailChangePassword}
+                  onChange={(e) => setEmailChangePassword(e.target.value)}
+                  className={inputClass}
+                />
                 <div className="flex justify-end gap-2">
                   <Button
                     variant="outline"
@@ -241,6 +266,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
                     onClick={() => {
                       setChangingEmail(false)
                       setNewEmail("")
+                      setEmailChangePassword("")
                     }}
                     disabled={sendingEmailChange}
                   >
@@ -282,16 +308,17 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
           ) : (
             <div className="space-y-2 rounded-md border border-red-900/50 bg-red-950/10 p-3">
               <label className="text-sm text-neutral-200" htmlFor="settings-delete-confirm">
-                Type your email address to confirm
+                Enter your password to confirm
               </label>
               <p className="text-xs text-neutral-500">
                 This is permanent. There&apos;s no way to get your account back.
               </p>
               <Input
                 id="settings-delete-confirm"
-                value={confirmEmailInput}
-                onChange={(e) => setConfirmEmailInput(e.target.value)}
-                placeholder={email}
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
                 className="border-neutral-700 bg-neutral-950/60 text-neutral-100 placeholder:text-neutral-600 focus-visible:border-red-500 focus-visible:ring-2 focus-visible:ring-red-500/30"
               />
               <div className="flex justify-end gap-2">
@@ -300,7 +327,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
                   size="sm"
                   onClick={() => {
                     setDeleteStep("idle")
-                    setConfirmEmailInput("")
+                    setDeletePassword("")
                   }}
                   disabled={deleting}
                 >
@@ -310,7 +337,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
                   variant="destructive"
                   size="sm"
                   onClick={handleDeleteAccount}
-                  disabled={!confirmMatches || deleting}
+                  disabled={!deletePassword || deleting}
                 >
                   {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
                   Delete my account
