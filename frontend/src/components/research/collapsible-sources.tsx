@@ -19,7 +19,6 @@ export function CollapsibleSources({ sources }: CollapsibleSourcesProps) {
 
   return (
     <div className="space-y-3">
-      {/* Toggle Button */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="group w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-500/8 border border-purple-500/30 hover:bg-purple-500/12 hover:border-purple-500/40 hover:shadow-[0_0_16px_rgba(139,92,246,0.15)] active:scale-[0.98] transition-all duration-200"
@@ -50,7 +49,6 @@ export function CollapsibleSources({ sources }: CollapsibleSourcesProps) {
         </div>
       </button>
 
-      {/* Expanded List */}
       {isExpanded && (
         <div
           className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300"

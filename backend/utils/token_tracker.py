@@ -1,13 +1,10 @@
-"""
-Token usage tracking and cost estimation
-"""
+"""Token counting and cost estimates."""
 
 import tiktoken
 from typing import Dict
 
 
 class TokenTracker:
-    """Track token usage and estimate costs"""
     
     # Pricing per 1M tokens (as of Oct 2025)
     PRICING = {

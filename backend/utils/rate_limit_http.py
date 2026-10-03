@@ -1,19 +1,6 @@
 """
-HTTP glue for the token buckets in utils/rate_limit.py.
-
-Two enforcement points, because they protect different things:
-
-  RateLimitMiddleware  runs before authentication, keyed by IP. Protects the
-                       auth path itself — main.get_current_user makes a
-                       blocking Supabase auth.get_user() call on every request
-                       via asyncio.to_thread, so an unauthenticated flood still
-                       burns a network round trip and a threadpool slot each.
-
-  rate_limited(...)    a FastAPI dependency that runs after authentication,
-                       keyed by the verified user id. Protects spend.
-
-The middleware also owns the X-RateLimit-* headers on *successful* responses,
-for a reason that is not obvious — see _wrap_send().
+HTTP glue for utils/rate_limit.py: RateLimitMiddleware (by IP, before auth) and
+rate_limited() (by user id, after auth).
 """
 from __future__ import annotations
 
@@ -32,9 +19,7 @@ from utils.rate_limit import BucketPolicy, Decision, POLICIES, RateLimitStore, c
 
 logger = logging.getLogger(__name__)
 
-#: Headers this module owns. Any value already on the response is replaced,
-#: never appended to — two competing X-RateLimit-Limit values would be worse
-#: than none at all.
+#: Replaced, never appended to, on the way out.
 _MANAGED_HEADERS: FrozenSet[bytes] = frozenset(
     (b"x-ratelimit-limit", b"x-ratelimit-remaining", b"x-ratelimit-reset")
 )
@@ -70,22 +55,10 @@ def _rejection_headers(decision: Decision) -> Dict[str, str]:
     return headers
 
 
-# ──────────────────────────────────────────────
-# Layer 1: pre-auth, keyed by IP
-# ──────────────────────────────────────────────
-
 class RateLimitMiddleware:
     """
-    Pure-ASGI IP rate limiter.
-
-    Deliberately NOT a BaseHTTPMiddleware subclass. BaseHTTPMiddleware re-pumps
-    the response body through an anyio memory stream, which adds a hop for
-    every server-sent event on /api/research/stream and has a long history of
-    interacting badly with long-lived streams and client-disconnect detection.
-    The raw ASGI form costs nothing on a streaming response.
-
-    NOTE ON REGISTRATION ORDER: this must be added to the app *before*
-    CORSMiddleware. See the comment at the add_middleware call in main.py.
+    IP rate limiter. Raw ASGI rather than BaseHTTPMiddleware, which buffers streaming
+    responses. Must be added before CORSMiddleware (see main.py).
     """
 
     def __init__(
@@ -109,10 +82,7 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # A genuine CORS preflight is answered by CORSMiddleware, which sits
-        # outside this one, so it never arrives here. Skipping OPTIONS anyway
-        # covers malformed preflights and keeps the behaviour explicit rather
-        # than emergent.
+        # CORSMiddleware answers real preflights first; this covers malformed ones.
         if scope.get("method") == "OPTIONS" or scope.get("path") in self.exempt_paths:
             await self.app(scope, receive, send)
             return
@@ -124,9 +94,7 @@ class RateLimitMiddleware:
         decision = await self.store.consume(f"ip:{client_ip(headers, peer, self.trusted_hops)}", self.policy)
 
         if not decision.allowed:
-            # Middleware cannot raise HTTPException: ExceptionMiddleware, which
-            # turns those into responses, lives *inside* the router stack. A
-            # raise from here would surface as a 500 via ServerErrorMiddleware.
+            # Can't raise HTTPException here; it would surface as a 500.
             response = JSONResponse(
                 {"detail": _detail(decision)},
                 status_code=429,
@@ -135,33 +103,19 @@ class RateLimitMiddleware:
             await response(scope, receive, send)
             return
 
-        # Give the downstream dependency a dict to write its decision into, so
-        # both layers are looking at the same object.
+        # The user-layer dependency writes its decision into this.
         scope.setdefault("state", {})
         await self.app(scope, receive, self._wrap_send(scope, send, decision))
 
     def _wrap_send(self, scope: Scope, send: Send, ip_decision: Decision) -> Send:
         """
-        Attach X-RateLimit-* to the outgoing response.
-
-        This lives in the middleware rather than the dependency because of a
-        FastAPI detail: when a handler returns a Response object directly — as
-        /api/research/stream does with StreamingResponse — routing.py takes the
-        `isinstance(raw_response, Response)` branch and never reaches the
-        `response.headers.raw.extend(sub_response.headers.raw)` line. Headers
-        set through an injected Response are silently dropped on exactly the
-        endpoint that matters most.
-
-        Reading them off the ASGI message on the way out sidesteps that
-        entirely. By the time http.response.start is emitted, the user-layer
-        dependency has already run and recorded its decision.
+        Attach X-RateLimit-* here, not in the dependency: FastAPI drops headers set on an
+        injected Response when the handler returns a Response itself (the SSE endpoint).
         """
 
         async def wrapped(message: Message) -> None:
             if message["type"] == "http.response.start":
-                # Prefer the user-layer decision: it is the tighter, more
-                # meaningful budget. Fall back to the IP layer when the request
-                # never reached an authenticated route.
+                # Prefer the user-layer decision; fall back to IP for unauthenticated routes.
                 decision = scope.get("state", {}).get("rate_limit") or ip_decision
                 kept = [
                     (key, value)
@@ -178,13 +132,7 @@ class RateLimitMiddleware:
         return wrapped
 
     def _log_forwarding_once(self, headers: Dict[str, str], peer: Optional[str]) -> None:
-        """
-        Record the proxy's actual header shape on the first real request.
-
-        RATE_LIMIT_TRUSTED_HOPS is a guess until this is read from a deployed
-        instance: if the hop count is wrong the IP layer keys on the wrong
-        address, which fails quietly rather than loudly.
-        """
+        """Log the proxy's header shape once, to check RATE_LIMIT_TRUSTED_HOPS in production."""
         if self._logged_forwarding:
             return
         self._logged_forwarding = True
@@ -197,10 +145,6 @@ class RateLimitMiddleware:
         )
 
 
-# ──────────────────────────────────────────────
-# Layer 2: post-auth, keyed by user id
-# ──────────────────────────────────────────────
-
 def rate_limited(
     bucket: str,
     auth_dependency: Callable[..., Any],
@@ -208,35 +152,9 @@ def rate_limited(
     cost: float = 1.0,
 ) -> Callable[..., Any]:
     """
-    Build a drop-in replacement for the `get_current_user` dependency that also
-    charges this request against `bucket`.
-
-    Usage in main.py:
-
-        read_user = rate_limited("read", get_current_user, _rate_limit_store)
-        ...
-        async def get_history(user: AuthedUser = Depends(read_user)):
-
-    It returns the same AuthedUser, so no handler body changes.
-
-    Why a dependency rather than doing this in the middleware: the middleware
-    cannot see the user id, and the alternatives are both bad. Decoding the JWT
-    unverified means an attacker mints {"sub": <random uuid>} and gets a fresh
-    bucket per request. Decoding it verified means a second, hand-maintained
-    copy of the auth path (PyJWT, the signing secret, JWKS rotation) whose
-    failure mode is "rate limiting quietly stopped working". Calling Supabase
-    again from the middleware doubles the exact cost being protected.
-
-    Three properties make this work:
-      * FastAPI caches sub-dependencies per request, so the expensive
-        asyncio.to_thread(_verify_access_token) still runs exactly once.
-      * dependency_overrides resolve for every node in the dependant tree, so
-        tests that override get_current_user keep working through this wrapper.
-      * Ordering is structural — this cannot run before auth, because `user` is
-        its own parameter. A 401 therefore never consumes a user's tokens.
-
-    `auth_dependency` is passed in rather than imported to avoid a circular
-    import between main.py and this module.
+    Wrap an auth dependency so it also charges `bucket`, keyed by the verified user id.
+    Runs after auth, so a 401 never costs user tokens. `auth_dependency` is passed in
+    to avoid a circular import with main.py.
     """
     policy = POLICIES[bucket]
 
@@ -245,7 +163,7 @@ def rate_limited(
             return user
 
         decision = await store.consume(f"{bucket}:{user.id}", policy, cost)
-        # Read back out by RateLimitMiddleware._wrap_send on the way out.
+        # Read by RateLimitMiddleware._wrap_send.
         request.state.rate_limit = decision
 
         if not decision.allowed:
@@ -259,18 +177,8 @@ def rate_limited(
     return dependency
 
 
-# ──────────────────────────────────────────────
-# Deployment guard
-# ──────────────────────────────────────────────
-
 def warn_if_multiprocess(log: logging.Logger) -> None:
-    """
-    Shout if this process looks like one of several workers.
-
-    The in-memory store is correct for exactly one process. Under N workers
-    each keeps its own buckets and every limit is silently multiplied by N —
-    a failure that produces no error, just limits that do not hold.
-    """
+    """Warn if running with several workers, which silently multiplies every limit."""
     try:
         concurrency = int(os.getenv("WEB_CONCURRENCY", "1"))
     except (TypeError, ValueError):

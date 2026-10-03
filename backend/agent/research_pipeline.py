@@ -11,11 +11,9 @@ from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
 logger = logging.getLogger(__name__)
 
-# Idle connections are kept for 60s (httpx default is 5s), so back-to-back queries
-# reuse them instead of paying a new TLS handshake (~0.6s each) per call.
+# Longer than httpx's 5s default so back-to-back queries skip the TLS handshake.
 _KEEPALIVE_SECONDS = 60.0
 
-# Initialize clients once at module level
 openai_client = AsyncOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     http_client=DefaultAsyncHttpxClient(
@@ -27,13 +25,11 @@ openai_client = AsyncOpenAI(
     )
 )
 
-# Tavily is called over REST with a pooled client (the tavily-python SDK opens a new
-# connection per call and can't set a timeout). Created lazily so it binds to the
-# running event loop.
+# Plain REST with a pooled client: the SDK opens a connection per call and has no timeout.
 TAVILY_URL = "https://api.tavily.com/search"
-TAVILY_INCLUDE_ANSWER = True    # Kept on: turning it off measured no faster on uncached queries, and answers then cite ~1 fewer source
-TAVILY_CALL_TIMEOUT = 8.0       # seconds for one search call
-TAVILY_WAVE_DEADLINE = 6.0      # seconds to wait for a whole wave; finished searches are kept
+TAVILY_INCLUDE_ANSWER = True    # Off was no faster and cited ~1 fewer source
+TAVILY_CALL_TIMEOUT = 8.0
+TAVILY_WAVE_DEADLINE = 6.0      # finished searches are kept when this expires
 
 _tavily_http: Optional[httpx.AsyncClient] = None
 
@@ -54,10 +50,7 @@ def _get_tavily_http() -> httpx.AsyncClient:
 
 
 async def warm_tavily_connections(n: int = 4) -> None:
-    """
-    Open n connections to Tavily ahead of a search wave. Cheap GETs (no search
-    credits), run while the query is being decomposed so the handshakes are hidden.
-    """
+    """Open connections during decomposition so the search wave skips the handshakes. Costs no credits."""
     client = _get_tavily_http()
 
     async def _ping() -> None:
@@ -95,10 +88,7 @@ Output:"""
 
 
 async def decompose_query(query: str) -> List[str]:
-    """
-    Decompose a user query into 3-4 targeted search sub-queries.
-    Falls back to original query if anything fails.
-    """
+    """Split a query into 3-4 search queries, falling back to the original."""
     try:
         response = await openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -111,7 +101,6 @@ async def decompose_query(query: str) -> List[str]:
 
         content = response.choices[0].message.content.strip()
 
-        # Handle ```json ... ``` wrapping
         if "```" in content:
             content = content.split("```")[1].replace("json", "").strip()
 
@@ -132,13 +121,8 @@ async def decompose_query(query: str) -> List[str]:
         return [query]
 
 
-# ──────────────────────────────────────────────
-# Step 2: Parallel Tavily Search
-# ──────────────────────────────────────────────
-
 async def _single_search(query: str, max_results: int = 5) -> Dict[str, Any]:
-    """Single Tavily search over the pooled client."""
-    # Same request body the tavily-python SDK sends, so results are unchanged
+    # Same body the tavily-python SDK sends.
     payload = {
         "query": query,
         "search_depth": "basic",
@@ -169,16 +153,12 @@ async def _single_search(query: str, max_results: int = 5) -> Dict[str, Any]:
 
 
 async def parallel_search(queries: List[str], max_results_per_query: int = 5) -> Dict[str, Any]:
-    """
-    Execute multiple Tavily searches concurrently.
-    Deduplicates by URL, sorts by relevance score, returns top 8 sources.
-    """
+    """Run searches concurrently; dedupe by URL and keep the top 8 by score."""
     tasks = [
         asyncio.create_task(_single_search(q, max_results_per_query))
         for q in queries
     ]
 
-    # Wait for the wave, but keep whatever finished if some searches are slow
     done, pending = await asyncio.wait(tasks, timeout=TAVILY_WAVE_DEADLINE)
     if pending:
         logger.warning(
@@ -257,7 +237,6 @@ Comprehensive Research Response:"""
 
 
 def _format_search_context(sources: List[Dict[str, Any]]) -> str:
-    """Format search results into LLM context."""
     parts = []
     for i, source in enumerate(sources, 1):
         content = source.get("content", "")
@@ -278,7 +257,6 @@ def _build_synthesis_prompt(
     sources: List[Dict[str, Any]],
     tavily_answers: List[str] = None
 ) -> str:
-    """Build the synthesis prompt. Shared by the streaming and blocking paths."""
     tavily_summary = ""
     if tavily_answers:
         combined = " ".join(tavily_answers).strip()
@@ -293,7 +271,6 @@ def _build_synthesis_prompt(
 
 
 def _build_citations(sources: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
-    """Citation format expected by the frontend and the messages table."""
     return [
         {
             "url": s["url"],
@@ -310,7 +287,6 @@ async def synthesize(
     sources: List[Dict[str, Any]],
     tavily_answers: List[str] = None
 ) -> str:
-    """Generate a comprehensive synthesis from search results."""
     prompt = _build_synthesis_prompt(query, sources, tavily_answers)
 
     try:
@@ -332,10 +308,7 @@ async def synthesize_stream(
     sources: List[Dict[str, Any]],
     tavily_answers: List[str] = None
 ) -> AsyncIterator[str]:
-    """
-    Same synthesis as synthesize(), yielded as text deltas so the answer can be
-    shown while it is being written. Model, prompt and parameters are identical.
-    """
+    """synthesize(), streamed as text deltas."""
     prompt = _build_synthesis_prompt(query, sources, tavily_answers)
 
     stream = await openai_client.chat.completions.create(
@@ -354,19 +327,14 @@ async def synthesize_stream(
             if delta:
                 yield delta
     finally:
-        # Closes the HTTP response if the consumer stops early (client disconnect)
+        # Closes the HTTP response if the client disconnects.
         await stream.close()
 
 
 async def research_complete(query: str) -> Dict[str, Any]:
-    """
-    Full research pipeline. Returns a result dict in the format main.py
-    expects, so downstream logic doesn't need to change per caller.
-    """
+    """Decompose, search, synthesize. Returns {output, citations, metadata}."""
     start_time = time.time()
 
-    # Step 1: Decompose query (~1s). Meanwhile open the Tavily connections the
-    # search step will use, so their TLS handshakes are hidden behind this call.
     warm_task = asyncio.create_task(warm_tavily_connections(n=4))
     sub_queries = await decompose_query(query)
     decomp_time = time.time() - start_time
@@ -374,7 +342,6 @@ async def research_complete(query: str) -> Dict[str, Any]:
     if not warm_task.done():
         warm_task.cancel()  # warming is best-effort; never let it delay the search
 
-    # Step 2: Parallel search (~1-2s)
     search_start = time.time()
     search_results = await parallel_search(queries=sub_queries, max_results_per_query=5)
     search_time = time.time() - search_start
@@ -384,7 +351,6 @@ async def research_complete(query: str) -> Dict[str, Any]:
         f"{len(search_results['sources'])} sources"
     )
 
-    # Step 3: Synthesize (~3-8s)
     synthesis_start = time.time()
 
     if not search_results["sources"]:
@@ -405,7 +371,6 @@ async def research_complete(query: str) -> Dict[str, Any]:
         f"total={total_time:.1f}s"
     )
 
-    # Format citations to match existing format EXACTLY
     citations = _build_citations(search_results["sources"], query)
 
     return {
@@ -427,20 +392,15 @@ async def research_complete(query: str) -> Dict[str, Any]:
 
 async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
     """
-    Same pipeline as research_complete(), yielded as events so the UI can show
-    progress instead of waiting for the whole answer:
+    research_complete() as events:
 
         {"type": "stage",  "phase": "decomposed", "sub_queries": [...]}
         {"type": "sources", "citations": [...], "sources_count": n}
-        {"type": "token",  "text": "..."}                      (many)
-        {"type": "final",  "output": ..., "citations": [...], "metadata": {...}}
-
-    The "final" event carries exactly the payload research_complete() returns,
-    so callers can persist it with the same code.
+        {"type": "token",  "text": "..."}
+        {"type": "final",  ...}  same payload as research_complete()
     """
     start_time = time.time()
 
-    # Step 1: Decompose, warming the Tavily connections behind the call
     warm_task = asyncio.create_task(warm_tavily_connections(n=4))
     sub_queries = await decompose_query(query)
     decomp_time = time.time() - start_time
@@ -450,7 +410,6 @@ async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
 
     yield {"type": "stage", "phase": "decomposed", "sub_queries": sub_queries}
 
-    # Step 2: Parallel search
     search_start = time.time()
     search_results = await parallel_search(queries=sub_queries, max_results_per_query=5)
     search_time = time.time() - search_start
@@ -468,7 +427,6 @@ async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
         "sources_count": len(sources)
     }
 
-    # Step 3: Stream the synthesis
     synthesis_start = time.time()
     ttft = None
     parts: List[str] = []
@@ -521,7 +479,6 @@ def _build_followup_messages(
     query: str,
     conversation_history: List[Dict[str, str]]
 ) -> List[Dict[str, str]]:
-    """Chat messages for a follow-up. Shared by the streaming and blocking paths."""
     messages = [
         {
             "role": "system",
@@ -548,11 +505,7 @@ async def handle_followup(
     query: str,
     conversation_history: List[Dict[str, str]]
 ) -> Dict[str, Any]:
-    """
-    Handle follow-up questions with a direct LLM call.
-    Returns result in the same format as research_complete().
-    ~2-3s instead of running the full pipeline.
-    """
+    """Answer a follow-up with one chat call instead of the full pipeline."""
     start_time = time.time()
     messages = _build_followup_messages(query, conversation_history)
 
@@ -589,12 +542,7 @@ async def handle_followup_stream(
     query: str,
     conversation_history: List[Dict[str, str]]
 ) -> AsyncIterator[Dict[str, Any]]:
-    """
-    Streaming follow-up. Same messages, model and parameters as handle_followup();
-    yields "token" events and then a "final" event in its return format.
-    A follow-up is almost entirely generation time, so this is where streaming
-    shows the biggest difference.
-    """
+    """handle_followup() as "token" events, then a "final" event."""
     start_time = time.time()
     messages = _build_followup_messages(query, conversation_history)
 

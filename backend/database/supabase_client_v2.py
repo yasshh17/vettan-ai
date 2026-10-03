@@ -1,6 +1,4 @@
-"""
-Production-grade Supabase client with connection pooling and retry logic
-"""
+"""Supabase data layer: sessions, messages and the per-user cache."""
 
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
@@ -22,21 +20,12 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-# Set once by the shared instance's startup probe; token-scoped instances read
-# it rather than re-probing per request.
+# Set by the shared instance's startup probe; scoped instances reuse it.
 _schema_ready_shared: bool = False
 
 
 class DuplicateSessionError(Exception):
-    """
-    This user already has a session with the same query_hash.
-
-    Raised instead of returning None so the caller can tell a permanent
-    rejection from a transient one and skip a retry that is certain to fail the
-    same way. Before 0004_scope_query_hash_unique.sql the uniqueness was global
-    rather than per-user, so this also fired when a *different* account had
-    simply asked the same question first.
-    """
+    """The user already has a session with this query_hash. Permanent, so callers skip the retry."""
 
 
 def _is_duplicate_key(err: Exception) -> bool:
@@ -46,13 +35,7 @@ def _is_duplicate_key(err: Exception) -> bool:
 
 
 def _build_client(url: str, key: str, access_token: Optional[str] = None) -> Client:
-    """
-    Build a Supabase client.
-
-    When access_token is given, PostgREST requests carry that user's JWT, so
-    auth.uid() resolves to them inside RLS policies. Without it the client acts
-    as the anon role and (once 0003_enable_rls.sql is applied) sees nothing.
-    """
+    """With access_token, requests run as that user under RLS; without it, as anon (sees nothing)."""
     if access_token:
         return create_client(
             url,
@@ -65,17 +48,7 @@ def _build_client(url: str, key: str, access_token: Optional[str] = None) -> Cli
 
 
 class VettanDatabaseV2:
-    """
-    Production-grade database client
-    
-    Features:
-    - Connection retry with exponential backoff
-    - Connection pooling
-    - Graceful degradation
-    - Comprehensive error logging
-    - Circuit breaker pattern
-    - Conversation threading with message history
-    """
+    """Database client. Token-scoped instances must only be used for their own caller."""
     
     def __init__(
         self,
@@ -85,27 +58,14 @@ class VettanDatabaseV2:
         verify_connection: bool = True,
     ):
         """
-        Initialize with retry logic
-
-        Args:
-            max_retries: Maximum connection attempts
-            timeout: Connection timeout in seconds
-            access_token: caller's Supabase JWT. When set, every PostgREST
-                request runs as that user so auth.uid() resolves under RLS.
-                This instance must then be used for that caller ONLY.
-            verify_connection: perform the connectivity round trip. Token-scoped
-                instances skip it — the shared instance already proved the
-                database is reachable, and paying a round trip per request
-                would be wasteful.
+        access_token: run every request as this user (RLS applies).
+        verify_connection: skipped for scoped instances; the shared one already checked.
         """
         self.max_retries = max_retries
         self.timeout = timeout
         self.access_token = access_token
         self.client: Optional[Client] = None
         self.is_connected = False
-        # Whether the tenant-isolation schema (research_sessions.user_id) is in
-        # place. Scoped instances inherit the shared instance's verdict rather
-        # than re-probing; see _schema_ready_shared below.
         self.schema_ready = False
 
         if verify_connection:
@@ -114,7 +74,6 @@ class VettanDatabaseV2:
             self._connect_unverified()
 
     def _connect_unverified(self) -> bool:
-        """Build the client without the connectivity probe (see __init__)."""
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
 
@@ -125,9 +84,6 @@ class VettanDatabaseV2:
         try:
             self.client = _build_client(url, key, self.access_token)
             self.is_connected = True
-            # Inherit the shared instance's verdict instead of paying a probe
-            # per caller; the schema is a property of the database, not of who
-            # is asking.
             self.schema_ready = _schema_ready_shared
             return True
         except Exception as e:
@@ -137,13 +93,8 @@ class VettanDatabaseV2:
 
     def check_schema(self) -> bool:
         """
-        Verify the tenant-isolation schema is actually present.
-
-        Every read and write in this module filters or writes
-        research_sessions.user_id. If that column is missing, PostgREST returns
-        42703 and the surrounding handlers degrade to None/[] — a silent,
-        total data-layer failure that looks exactly like an empty account.
-        Detect it once, at startup, and say so unmistakably.
+        Check research_sessions.user_id exists. Without it every query fails with 42703
+        and the handlers return [], which looks like an empty account.
         """
         global _schema_ready_shared
 
@@ -185,12 +136,7 @@ class VettanDatabaseV2:
             return False
 
     def _connect(self) -> bool:
-        """
-        Connect to Supabase with retry logic
-        
-        Returns:
-            True if connected, False otherwise
-        """
+        """Connect with exponential backoff. Returns whether it succeeded."""
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
         
@@ -199,30 +145,23 @@ class VettanDatabaseV2:
             self.is_connected = False
             return False
         
-        # Validate URL format
         if not url.startswith(('http://', 'https://')):
             print(f"❌ Invalid SUPABASE_URL format: {url}")
             self.is_connected = False
             return False
         
-        # Retry logic with exponential backoff
         for attempt in range(1, self.max_retries + 1):
             try:
                 print(f"🔄 Connecting to Supabase (attempt {attempt}/{self.max_retries})...")
 
-                # Create client
                 self.client = _build_client(url, key, self.access_token)
 
-                # Test connection
                 self.client.table('research_sessions').select('id').limit(1).execute()
 
                 print(f"✅ Connected to Supabase: {url}")
                 self.is_connected = True
 
-                # Connectivity alone is not readiness. The probe above only
-                # touches `id`, so it passes even when the tenant-isolation
-                # column is missing — which is exactly how a total write
-                # failure once presented as "you have no history".
+                # The probe above only reads `id`, so it passes without user_id.
                 self.check_schema()
                 return True
                 
@@ -241,18 +180,11 @@ class VettanDatabaseV2:
     
     @staticmethod
     def generate_query_hash(query: str) -> str:
-        """Generate MD5 hash for caching"""
         normalized = query.lower().strip()
         return hashlib.md5(normalized.encode()).hexdigest()
 
     def owns_session(self, session_id: str, user_id: str) -> bool:
-        """
-        Does this user own this session?
-
-        `messages` carries no user_id of its own — ownership is derived from the
-        parent session, matching the RLS policy in 0003_enable_rls.sql. Legacy
-        rows have user_id NULL and are therefore owned by nobody.
-        """
+        """Ownership comes from the parent session, like the RLS policy. NULL user_id is owned by nobody."""
         if not self.is_connected or not self.client:
             return False
 
@@ -271,19 +203,12 @@ class VettanDatabaseV2:
             return bool(data)
 
         except Exception as e:
-            # Fail closed: an error here must never read as "yes, they own it".
+            # Fail closed.
             print(f"⚠️ Ownership check failed for {session_id[:8]}: {e}")
             return False
     
     def check_cache(self, query: str, user_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Check this user's cache.
-
-        Scoped to user_id deliberately. A global query-hash cache leaked both
-        the report body AND the owning session id to anyone who submitted a
-        colliding query string — and the caller then adopted that foreign
-        session id as its own thread.
-        """
+        """Per-user on purpose: a hit hands back its session id, so a global cache leaked sessions."""
         if not self.is_connected or not self.client:
             return None
 
@@ -306,7 +231,6 @@ class VettanDatabaseV2:
             if data and len(data) > 0:
                 cached = data[0]
                 
-                # Parse JSON fields safely
                 try:
                     if isinstance(cached.get('citations'), str):
                         cached['citations'] = json.loads(cached['citations'])
@@ -335,16 +259,8 @@ class VettanDatabaseV2:
         messages: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[str]:
         """
-        Save session with validation AND create initial messages
-
-        This now creates:
-        1. The research_sessions entry
-        2. User message (the query)
-        3. Assistant message (the report)
-
-        Two round trips in total: one session insert, one batch insert for both
-        messages. Pass session_id and/or messages to save rows the caller has
-        already handed to the client (so ids match what was returned to it).
+        Insert the session, then its user and assistant messages in one batch. Pass
+        session_id/messages to reuse ids already returned to the client.
         """
         if not self.is_connected or not self.client:
             print("⚠️ Database not connected - skipping save")
@@ -364,7 +280,6 @@ class VettanDatabaseV2:
             
             clean_metadata = {k: v for k, v in metadata.items() if v is not None}
             
-            # Use the caller's session ID if given, otherwise generate one
             session_id = session_id or str(uuid.uuid4())
             
             data = {
@@ -387,7 +302,6 @@ class VettanDatabaseV2:
             if result_data and len(result_data) > 0:
                 print(f"✅ Saved session: {session_id[:8]}")
                 
-                # Create initial messages for conversation thread (one batch insert)
                 try:
                     if messages is None:
                         now = datetime.now()
@@ -402,15 +316,14 @@ class VettanDatabaseV2:
                                 'content': report,
                                 'citations': clean_citations,
                                 'metadata': clean_metadata,
-                                # Later than the user message so the thread sorts correctly
+                                # Must sort after the user message.
                                 'created_at': (now + timedelta(milliseconds=1)).isoformat()
                             }
                         ]
 
                     thread_saved = False
                     for _ in range(2):
-                        # The session row was just created, so no updated_at touch is needed
-                        # and its ownership is known without another round trip.
+                        # Just created, so ownership is known and updated_at is fresh.
                         if self.add_messages_batch(
                             session_id,
                             messages,
@@ -433,16 +346,12 @@ class VettanDatabaseV2:
             return None
             
         except Exception as e:
-            # NOT non-critical: this is the user's research being dropped. It
-            # runs in a background task after the response, so nobody is
-            # waiting on it — which makes the log the only evidence it happened.
+            # Runs in a background task, so this log is the only trace of lost research.
             logger.error(
                 "Failed to save session %s (the answer was returned but NOT persisted): %s",
                 session_id[:8] if session_id else "?", e,
             )
             if _is_duplicate_key(e):
-                # Permanent for this (user_id, query_hash). Retrying re-runs the
-                # same insert and fails identically, so tell the caller to stop.
                 logger.error(
                     "  -> this account already has a session for that exact query; "
                     "not retrying. If the owner is a DIFFERENT account, "
@@ -465,20 +374,7 @@ class VettanDatabaseV2:
         citations: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[str]:
-        """
-        Add a message to a conversation thread
-
-        Args:
-            session_id: UUID of the parent session
-            role: 'user' or 'assistant'
-            content: Message content
-            user_id: authenticated caller; must own session_id
-            citations: Optional citations (for assistant messages)
-            metadata: Optional metadata (for assistant messages)
-
-        Returns:
-            Message ID if successful, None otherwise
-        """
+        """Add one message. Returns its id, or None. user_id must own the session."""
         if not self.is_connected or not self.client:
             print("⚠️ Database not connected - cannot save message")
             return None
@@ -507,7 +403,6 @@ class VettanDatabaseV2:
             if result_data and len(result_data) > 0:
                 print(f"💬 Message added: {role} in session {session_id[:8]}")
                 
-                # Update session's updated_at timestamp
                 try:
                     self.client.table('research_sessions').update({
                         'updated_at': datetime.now().isoformat()
@@ -534,20 +429,8 @@ class VettanDatabaseV2:
         _ownership_checked: bool = False
     ) -> bool:
         """
-        Add several messages to a conversation thread in ONE insert.
-
-        Each message needs 'role' and 'content'. 'id' and 'created_at' are used
-        when supplied (so a caller can return the same ids it saves), otherwise
-        generated. Rows are stored in the order given.
-
-        Args:
-            user_id: authenticated caller; must own session_id
-            touch_session: also bump the session's updated_at (one extra call)
-            _ownership_checked: internal — set by save_session, which has just
-                inserted the session row and so already knows it is owned.
-
-        Returns:
-            True if every message was saved, False otherwise
+        Insert messages in one call, keeping any supplied id/created_at. user_id must own
+        the session; _ownership_checked is for save_session, which just created it.
         """
         if not self.is_connected or not self.client:
             print("⚠️ Database not connected - cannot save messages")
@@ -600,16 +483,7 @@ class VettanDatabaseV2:
             return False
 
     def get_conversation_history(self, session_id: str, user_id: str) -> List[Dict[str, Any]]:
-        """
-        Get all messages in a conversation thread, ordered chronologically
-
-        Args:
-            session_id: UUID of the session
-            user_id: authenticated caller; must own session_id
-
-        Returns:
-            List of messages with role, content, citations, metadata
-        """
+        """Messages in order, or [] if the session isn't the user's."""
         if not self.is_connected or not self.client:
             print("⚠️ Database not connected - cannot retrieve messages")
             return []
@@ -633,7 +507,6 @@ class VettanDatabaseV2:
                 print(f"ℹ️ No messages found for session {session_id[:8]}")
                 return []
             
-            # Parse JSON fields safely
             parsed_messages = []
             for message in data:
                 try:
@@ -656,7 +529,6 @@ class VettanDatabaseV2:
             return []
     
     def get_recent_sessions(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get this user's recent sessions with robust error handling"""
         if not self.is_connected or not self.client:
             print("⚠️ Database not connected")
             return []
@@ -667,7 +539,7 @@ class VettanDatabaseV2:
         try:
             print(f"📚 Fetching {limit} recent sessions...")
 
-            # Try with updated_at, fallback to created_at
+            # Fall back to created_at for rows without updated_at.
             try:
                 response = self.client.table('research_sessions') \
                     .select('id, query, created_at, updated_at, metadata, is_favorite') \
@@ -693,7 +565,6 @@ class VettanDatabaseV2:
             
             print(f"📊 Raw data retrieved: {len(data)} sessions")
             
-            # Parse JSON fields
             parsed_sessions = []
             for session in data:
                 try:
@@ -723,8 +594,7 @@ class VettanDatabaseV2:
             return parsed_sessions
             
         except Exception as e:
-            # Returning [] here is indistinguishable from "this user has no
-            # history", so the reason must reach the log.
+            # [] looks like "no history", so log why.
             logger.error("Failed to fetch history for user %s: %s", user_id[:8] if user_id else "?", e)
             if not self.schema_ready:
                 logger.error(
@@ -734,13 +604,7 @@ class VettanDatabaseV2:
             return []
     
     def get_session_by_id(self, session_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a specific session by ID, scoped to its owner.
-
-        Returns None both when the session does not exist and when it belongs to
-        someone else, so callers surface 404 either way and the endpoint cannot
-        be used to probe which session ids are real.
-        """
+        """None if missing or not the user's, so both 404 the same way."""
         if not self.is_connected or not self.client:
             return None
 
@@ -750,8 +614,7 @@ class VettanDatabaseV2:
         try:
             print(f"🔍 Fetching session by ID: {session_id}")
 
-            # .limit(1) rather than .single(): a miss is now an ordinary outcome
-            # (unowned sessions), not an exceptional one.
+            # .limit(1), not .single(): a miss is a normal outcome.
             response = self.client.table('research_sessions') \
                 .select('*') \
                 .eq('id', session_id) \
@@ -767,7 +630,6 @@ class VettanDatabaseV2:
 
             data: Dict[str, Any] = rows[0]
 
-            # Parse JSON fields safely
             try:
                 if isinstance(data.get('citations'), str):
                     data['citations'] = json.loads(data['citations'])
@@ -786,17 +648,7 @@ class VettanDatabaseV2:
             return None
     
     def update_session(self, session_id: str, update_data: dict, user_id: str) -> bool:
-        """
-        Update session (rename/favorite)
-
-        Args:
-            session_id: UUID of session to update
-            update_data: Dict with keys like 'query', 'is_favorite'
-            user_id: authenticated caller; must own session_id
-        
-        Returns:
-            True if update successful, False otherwise
-        """
+        """Rename or favorite. False if missing or not the user's."""
         if not self.is_connected or not self.client:
             logger.error("Database not connected")
             return False
@@ -809,7 +661,6 @@ class VettanDatabaseV2:
             if not user_id:
                 return False
 
-            # Add updated_at timestamp
             update_data['updated_at'] = datetime.now().isoformat()
 
             print(f"✏️ Updating session: {session_id[:8]}... with {update_data}")
@@ -838,16 +689,7 @@ class VettanDatabaseV2:
             return False
     
     def delete_session(self, session_id: str, user_id: str) -> bool:
-        """
-        Delete a session permanently (CASCADE deletes messages)
-
-        Args:
-            session_id: UUID of session to delete
-            user_id: authenticated caller; must own session_id
-
-        Returns:
-            True if deletion successful, False otherwise
-        """
+        """Delete a session and its messages. False if missing or not the user's."""
         if not self.is_connected or not self.client:
             logger.error("Database not connected")
             return False
@@ -857,17 +699,13 @@ class VettanDatabaseV2:
                 logger.error(f"Invalid session_id: {session_id}")
                 return False
 
-            # Check ownership BEFORE touching messages. The message delete is
-            # keyed on session_id alone, so running it first would let an
-            # unowned request destroy the thread even though the session delete
-            # below correctly refuses.
+            # Check ownership first: the message delete is keyed on session_id alone.
             if not self.owns_session(session_id, user_id):
                 logger.warning(f"🚫 Refusing to delete unowned session: {session_id[:8]}")
                 return False
 
             print(f"🗑️ Deleting session: {session_id[:8]}...")
 
-            # Delete messages first
             try:
                 msg_result = self.client.table('messages') \
                     .delete() \
@@ -877,7 +715,6 @@ class VettanDatabaseV2:
             except Exception as msg_delete_err:
                 print(f"⚠️ Failed to delete messages (non-critical): {msg_delete_err}")
 
-            # Delete session
             result = self.client.table('research_sessions') \
                 .delete() \
                 .eq('id', session_id) \
@@ -902,7 +739,6 @@ class VettanDatabaseV2:
             return False
     
     def health_check(self) -> bool:
-        """Check if database is healthy"""
         if not self.is_connected or not self.client:
             return False
         
@@ -913,16 +749,12 @@ class VettanDatabaseV2:
             return False
 
 
-# Singleton with lazy initialization
 _db_instance: Optional[VettanDatabaseV2] = None
 _db_initialized: bool = False
 
 
 def get_database_v2() -> Optional[VettanDatabaseV2]:
-    """
-    Get database instance with lazy initialization
-    Returns None if connection fails (graceful degradation)
-    """
+    """Shared instance, created lazily. None if the connection fails."""
     global _db_instance, _db_initialized
     
     if _db_initialized:
@@ -941,17 +773,8 @@ def get_database_v2() -> Optional[VettanDatabaseV2]:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Per-caller, token-bound database handles
-#
-# get_database_v2() returns ONE process-wide instance holding ONE client. That
-# client must never be mutated per request: BackgroundTasks run after the
-# response is sent, so two concurrent users would clobber each other's token
-# and read each other's rows — the very bug this module is being fixed for.
-#
-# Instead every authenticated request gets a handle whose client carries that
-# caller's JWT. Handles are cached by token so we don't rebuild one per request.
-# ---------------------------------------------------------------------------
+# Per-caller handles bound to the caller's JWT, cached by token. The shared client is
+# never given a user's token: background tasks would mix up concurrent users.
 
 _SCOPED_TTL_SECONDS = 300
 _SCOPED_MAX_ENTRIES = 512
@@ -961,7 +784,6 @@ _scoped_lock = threading.Lock()
 
 
 def _token_cache_key(access_token: str) -> str:
-    """Hash the token — never key the cache on raw credentials."""
     return hashlib.sha256(access_token.encode()).hexdigest()
 
 
@@ -976,14 +798,7 @@ def _prune_scoped_cache(now: float) -> None:
 
 
 def get_user_scoped_db(access_token: str) -> Optional[VettanDatabaseV2]:
-    """
-    Database handle bound to one caller's JWT.
-
-    PostgREST requests made through it run as that user, so auth.uid() resolves
-    and the RLS policies in 0003_enable_rls.sql apply. The application-layer
-    user_id filters are kept regardless — two independent layers, either of
-    which alone would contain a mistake in the other.
-    """
+    """Handle that runs as the caller, so RLS applies on top of the app's own user_id filters."""
     if not access_token:
         return None
 
@@ -996,8 +811,7 @@ def get_user_scoped_db(access_token: str) -> Optional[VettanDatabaseV2]:
             _scoped_cache.move_to_end(key)
             return entry[1]
 
-    # Build outside the lock: construction does I/O-ish work and we would
-    # otherwise serialise every first request behind it.
+    # Built outside the lock so first requests don't queue behind each other.
     try:
         instance = VettanDatabaseV2(access_token=access_token, verify_connection=False)
     except Exception as e:

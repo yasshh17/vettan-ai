@@ -38,8 +38,7 @@ export async function updateSession(request: NextRequest) {
     } = await supabase.auth.getUser()
     user = fetchedUser
   } catch {
-    // Fail CLOSED. This used to return the response unchanged, so a Supabase
-    // outage or misconfiguration served /app to an unauthenticated visitor.
+    // Fail closed: never serve /app when the session can't be checked.
     if (isProtected) {
       const url = request.nextUrl.clone()
       url.pathname = "/sign-in"
