@@ -123,10 +123,8 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
   return (
     <div className="w-full max-w-4xl mx-auto">
       <div className="relative">
-        {/* Main Search Container */}
         <div className="relative bg-neutral-800 border border-neutral-700 rounded-2xl shadow-lg hover:border-neutral-600 transition-colors duration-200">
           <div className="flex items-center gap-2 p-3">
-            {/* Textarea */}
             <textarea
               ref={textareaRef}
               value={query}
@@ -142,9 +140,7 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
               }}
             />
 
-            {/* Action Buttons Container */}
             <div className="flex items-center gap-2">
-              {/* Microphone Button (Dictate) */}
               <div className="relative">
                 <button
                   type="button"
@@ -165,7 +161,6 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
                   <Mic className="w-5 h-5" />
                 </button>
 
-                {/* Dictate Tooltip */}
                 {showMicTooltip && !isListening && (
                   <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-neutral-900 text-neutral-200 text-sm rounded-lg whitespace-nowrap pointer-events-none animate-in fade-in duration-200 shadow-lg border border-neutral-700 z-50">
                     Dictate
@@ -174,7 +169,6 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
                 )}
               </div>
 
-              {/* Voice Mode Button */}
               <div className="relative">
                 <button
                   type="button"
@@ -195,7 +189,6 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
                   <AudioWaveform className="w-5 h-5" />
                 </button>
 
-                {/* Voice Mode Tooltip */}
                 {showVoiceModeTooltip && !isVoiceMode && (
                   <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-neutral-900 text-neutral-200 text-sm rounded-lg whitespace-nowrap pointer-events-none animate-in fade-in duration-200 shadow-lg border border-neutral-700 z-50">
                     Use voice mode
@@ -204,7 +197,6 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
                 )}
               </div>
 
-              {/* Submit Button */}
               <button
                 type="button"
                 onClick={handleSubmit}
@@ -226,7 +218,6 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
           </div>
         </div>
 
-        {/* Voice Status Indicator */}
         {isListening && (
           <div className="mt-2 text-center">
             <span className="inline-flex items-center gap-2 px-3 py-1 bg-red-500/20 text-red-400 text-sm rounded-full animate-in fade-in duration-200">
@@ -236,7 +227,6 @@ export function VoiceSearchBar({ onSubmit, placeholder = "Ask anything..." }: Vo
           </div>
         )}
 
-        {/* Disclaimer */}
         <p className="text-neutral-500 text-xs text-center mt-3">
           Vettan AI can make mistakes. Verify important information.
         </p>

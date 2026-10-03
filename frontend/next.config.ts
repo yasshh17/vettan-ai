@@ -1,16 +1,10 @@
 import type { NextConfig } from "next";
 
-// Origins the app actually talks to, so connect-src isn't left wide open.
-// Both are public by design (anon key / public API base), so no secret
-// leaks by including them in a header value.
+// Origins for connect-src. Both are public values.
 const rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
 
-// A malformed value here (e.g. a botched env-var paste that concatenates the
-// URL with the next KEY=VALUE line) doesn't fail loudly on its own: it just
-// isn't a valid CSP source expression, so the browser silently drops it from
-// connect-src and every Supabase call gets blocked in production instead.
-// Fail the build instead so this surfaces at deploy time, not in a user's
-// console.
+// Fail the build on a malformed origin: the browser would silently drop it from
+// connect-src and block every Supabase call in production.
 const HOSTNAME_PATTERN =
   /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i
 
@@ -18,11 +12,7 @@ if (rawSupabaseUrl) {
   let isValid = false
   try {
     const parsed = new URL(rawSupabaseUrl)
-    // `new URL()` is lenient about host content (it happily accepts
-    // "=" and "_"), which is exactly what lets a concatenated env var
-    // slip through as a "valid" URL. Require an actual hostname shape
-    // and no leftover path/query/hash, since a Supabase project URL is
-    // just a bare origin.
+    // new URL() accepts "=" and "_" in hosts, so a pasted KEY=VALUE slips through.
     isValid =
       (parsed.protocol === "http:" || parsed.protocol === "https:") &&
       HOSTNAME_PATTERN.test(parsed.hostname) &&
@@ -48,13 +38,8 @@ if (rawSupabaseUrl) {
 const SUPABASE_ORIGIN = rawSupabaseUrl
 const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-// Next.js injects small inline bootstrap scripts (hydration data, etc.)
-// without a nonce today, so 'unsafe-inline' on script-src is required for
-// the app to run at all. This CSP is still real defense in depth: it blocks
-// loading script/style/frame/object content from any *other* origin, which
-// is exactly the shape of payload the XSS fix in page.tsx was guarding
-// against (an injected <img onerror=...> can still fire inline, but a
-// fetch()/img/script pointed at an attacker-controlled host is blocked).
+// 'unsafe-inline' is needed for Next's un-nonced bootstrap scripts. The CSP still
+// blocks loading content from other origins.
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",

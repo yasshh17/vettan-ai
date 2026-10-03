@@ -5,9 +5,7 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get("code")
   const requestedNext = searchParams.get("next")
-  // Only allow same-site, relative redirects. A value like "//evil.com" or
-  // "https://evil.com" would otherwise send the just-authenticated user to
-  // an external origin right after sign-in (open redirect).
+  // Relative paths only, to prevent an open redirect ("//evil.com").
   const next =
     requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")
       ? requestedNext
@@ -21,9 +19,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // Reached when the link was expired or already used (Supabase then sends
-  // ?error=... instead of ?code=) or the code exchange failed. For sign-up
-  // links the email is already confirmed by this point, so the sign-in page
-  // tells the user to just sign in with their password.
+  // Expired or reused link, or a failed exchange. Sign-up emails are confirmed by now.
   return NextResponse.redirect(`${origin}/sign-in?error=link_invalid`)
 }

@@ -1,6 +1,4 @@
-"""
-Extract and format citations from agent research
-"""
+"""Citations from agent output."""
 
 import re
 from typing import List, Dict
@@ -8,7 +6,6 @@ from urllib.parse import urlparse
 
 
 class CitationExtractor:
-    """Extract URLs and create citation list from agent output"""
     
     @staticmethod
     def extract_urls(text: str) -> List[str]:

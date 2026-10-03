@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { ArrowUp, Square, Mic, AudioWaveform } from "lucide-react"
 import { refreshHistory, confirmSessionSaved } from "@/lib/api"
-import { authPost, RateLimitedError } from "@/lib/auth-fetch"
+import { authPost, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
 import { streamResearch, type StreamEvent } from "@/lib/research-stream"
 import { useToast } from "@/hooks/use-toast"
 
@@ -23,23 +23,12 @@ interface StickySearchBarProps {
   hasResults: boolean
   onVoiceModeToggle?: () => void
   currentSessionId?: string | null
-  /** Called for every event of a streamed answer: stage, sources, token, done, error. */
   onStreamEvent?: (event: StreamEvent, context: { query: string; isFollowUp: boolean }) => void
-  /**
-   * Holds the in-flight stream's AbortController. Owned by the page, because this
-   * component unmounts mid-stream: submitting swaps the hero search bar for the
-   * docked one, so a controller kept in local state would be lost and Stop would
-   * quietly do nothing.
-   */
+  /** Owned by the page: this component unmounts mid-stream (hero bar swaps to docked). */
   abortRef?: React.MutableRefObject<AbortController | null>
   /**
-   * Same reason as abortRef: a query rejected by the rate limiter has nowhere
-   * local to land if this instance unmounts before the response comes back.
-   * A first-ever query flips isLoading true then back to false with no
-   * results yet, which swaps the hero bar out and back in as a fresh
-   * instance — setQuery() on the failing (stale) instance would target a
-   * component that's already gone. Written on rejection, read once by
-   * whichever instance mounts next and cleared immediately after.
+   * Hands a rejected query to the next mounted instance. A first query that fails
+   * remounts the hero bar, so setQuery() on the old instance would be lost.
    */
   pendingQueryRef?: React.MutableRefObject<string | null>
 }
@@ -56,14 +45,7 @@ export function StickySearchBar({
   pendingQueryRef
 }: StickySearchBarProps) {
   const { toast } = useToast()
-  // Seeded once from any query a previous (now-unmounted) instance couldn't
-  // hand back directly. Read-only here on purpose: Next's default
-  // reactStrictMode double-invokes a useState initializer on mount in dev
-  // and keeps only one result, so an initializer that both reads AND clears
-  // the ref would have the two invocations disagree (the second would see it
-  // already cleared) and could silently lose the restored text. The clear is
-  // a separate effect below, which is idempotent under that same
-  // double-invocation.
+  // Read only; clearing here would break under StrictMode's double-invoked initializer.
   const [query, setQuery] = useState(() => pendingQueryRef?.current ?? "")
   const [isFocused, setIsFocused] = useState(false)
   const [isListening, setIsListening] = useState(false)
@@ -72,15 +54,10 @@ export function StickySearchBar({
   const inputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
   const localAbortRef = useRef<AbortController | null>(null)
-  // Prefer the page-owned ref so Stop still works after this component remounts
   const activeAbortRef = abortRef ?? localAbortRef
   const micTooltipTimer = useRef<number | null>(null)
   const voiceModeTooltipTimer = useRef<number | null>(null)
 
-  // Clears what the initializer above just consumed, so a later, unrelated
-  // mount doesn't inherit stale text. Split from the read for the StrictMode
-  // reason noted there; setting a ref to null twice (StrictMode's mount ->
-  // cleanup -> mount replay) is harmless.
   useEffect(() => {
     if (pendingQueryRef) pendingQueryRef.current = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -154,8 +131,6 @@ export function StickySearchBar({
     setIsLoading(true)
     setQuery("")
 
-    // Put the question and an empty answer on screen before the request opens,
-    // so the page reacts immediately instead of sitting on the previous view.
     onStreamEvent?.({ type: "submitted" }, context)
 
     const controller = new AbortController()
@@ -171,8 +146,7 @@ export function StickySearchBar({
         if (event.type === "done") {
           sawDone = true
           if (!isFollowUp) newSessionId = event.session_id
-          // Same shape the non-streaming endpoint returns, so the page's
-          // session handling and the history list are updated as before.
+          // Same shape as the non-streaming response.
           onResultsUpdate({
             output: null,
             citations: event.citations,
@@ -187,8 +161,7 @@ export function StickySearchBar({
 
       if (!sawDone) throw new Error("The answer ended before it was complete.")
 
-      // The save happens after the stream closes, so its outcome is only
-      // knowable now. Checked after the loop so it never stalls token delivery.
+      // The save runs after the stream closes, so it can only be checked now.
       if (newSessionId) {
         if (!(await confirmSessionSaved(newSessionId))) {
           onStreamEvent?.({ type: "not_saved" }, context)
@@ -200,35 +173,24 @@ export function StickySearchBar({
       if (controller.signal.aborted) {
         onStreamEvent?.({ type: "aborted" }, context)
       } else if (err instanceof RateLimitedError) {
-        // Deliberately NOT falling back to /api/research. It draws on the same
-        // bucket, so the retry would either be rejected too or — worse, if the
-        // buckets are ever split — quietly spend a second research request's
-        // worth of Tavily and OpenAI credits for one user action.
+        // No fallback to /api/research: same bucket, and it would spend a second request.
         onStreamEvent?.({ type: "error", message: err.message }, context)
-        toast({ title: "Slow down a moment", description: err.message, variant: "destructive" })
-        // Nothing ran, so give the question back rather than making them retype
-        // it: handleSubmit cleared the input optimistically before the request.
+        toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
         setQuery(submitted)
-        // A follow-up keeps hasResults true throughout, so this same docked
-        // instance never remounts — setQuery above is enough, and the ref
-        // would just be a value nobody ever reads until some unrelated later
-        // mount, wrongly inheriting this text. Only a first-ever query
-        // actually remounts (isLoading round-trips true->false with no
-        // results, swapping hero->docked->hero) — see pendingQueryRef's doc
-        // comment — so only that case needs the hand-off.
+        // Only a first query remounts; follow-ups keep this instance.
         if (!isFollowUp && pendingQueryRef) pendingQueryRef.current = submitted
       } else {
         console.error("Streaming failed, falling back to /api/research:", err)
         await runWithoutStreaming(payload, context, err)
       }
     } finally {
-      // Only clear it if it is still ours, never a newer stream's controller
+      // Don't clear a newer stream's controller.
       if (activeAbortRef.current === controller) activeAbortRef.current = null
       setIsLoading(false)
     }
   }
 
-  /** Fallback if streaming fails: the original blocking request. */
+  /** Non-streaming fallback when the stream fails. */
   const runWithoutStreaming = async (
     payload: Record<string, any>,
     context: { query: string; isFollowUp: boolean },
@@ -251,18 +213,11 @@ export function StickySearchBar({
       refreshHistory()
     } catch (err) {
       console.error("Research failed:", err)
-      // A rate limit hit on the fallback describes the situation better than
-      // whatever made the stream fail, so it wins. Otherwise keep reporting the
-      // original stream error, which is the more useful diagnosis.
+      // A rate limit is the clearer message; otherwise report the original stream error.
       if (err instanceof RateLimitedError) {
         onStreamEvent?.({ type: "error", message: err.message }, context)
-        // Same treatment as the stream's own 429: nothing succeeded here
-        // either, so give the text back the same way.
-        toast({ title: "Slow down a moment", description: err.message, variant: "destructive" })
+        toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
         setQuery(context.query)
-        // See the matching guard in the stream's own 429 branch above: the
-        // ref hand-off is only for a remount, which only happens for a
-        // first-ever query.
         if (!context.isFollowUp && pendingQueryRef) pendingQueryRef.current = context.query
       } else {
         const message =

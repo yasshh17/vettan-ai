@@ -32,9 +32,7 @@ export function ForgotPasswordForm() {
         redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
       })
 
-      // Never confirm/deny whether an email is registered: only a rate-limit
-      // error gets surfaced, every other outcome (including any other
-      // Supabase error) shows the same "check your email" success state.
+      // Don't reveal whether the email exists; only rate limits are surfaced.
       if (error && /rate limit|429/i.test(error.message)) {
         setFormError("Too many requests. Please wait a moment and try again.")
         setLoading(false)

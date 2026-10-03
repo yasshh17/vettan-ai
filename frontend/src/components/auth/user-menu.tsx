@@ -39,9 +39,7 @@ export function UserMenu({ isExpanded }: { isExpanded: boolean }) {
   const handleSignOut = async () => {
     setSigningOut(true)
     try {
-      // Clears the SWR cache and does a full page load, so nothing from this
-      // account is left in memory for the next one. Leaves the button in its
-      // "signing out" state on success: the page is about to be replaced.
+      // No reset on success: signOut() replaces the page.
       await signOutAndReset()
     } catch {
       setSigningOut(false)

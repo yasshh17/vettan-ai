@@ -10,9 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-// Authenticated fetcher — the backend returns only this caller's sessions.
-// Accepts either key shape so it cannot throw if a caller ever passes the bare
-// URL; the tuple form is what this component actually subscribes with.
+// Accepts the bare URL or the [url, userId] tuple this component subscribes with.
 const fetcher = (key: string | [string, string]) =>
   authGet<any>(Array.isArray(key) ? key[0] : key)
 
@@ -379,7 +377,6 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
   
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  // The signed-in user's id, used to scope the SWR cache key below.
   const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -400,9 +397,7 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
     }
   }, [])
 
-  // Key includes the user id so signing out and back in as someone else cannot
-  // serve the previous account's history out of the SWR cache. A null key means
-  // "signed out" and SWR skips the request entirely.
+  // User id in the key so cached history never crosses accounts. null skips the fetch.
   const { data, error, isLoading, mutate } = useSWR(
     userId ? [HISTORY_URL, userId] : null,
     fetcher,

@@ -1,7 +1,4 @@
-"""
-Vettan AI Backend - Production Grade
-Full conversation threading with context awareness
-"""
+"""Vettan API: research, follow-ups, history and audio."""
 
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,18 +47,19 @@ from utils.rate_limit import (
     InMemoryTokenBucketStore,
 )
 from utils.rate_limit_http import RateLimitMiddleware, rate_limited, warn_if_multiprocess
+from utils import spend_guard
 
-# One process, one set of buckets. See utils/rate_limit.py for why a token
-# bucket and not a sliding window, and for the two-layer split.
+# In-process buckets: correct only while this runs as a single worker.
 _rate_limit_store = InMemoryTokenBucketStore()
 
-# Rate is not concurrency: the bucket above would happily let one user open
-# twenty simultaneous streams in a second, and each of those ties up a
-# threadpool slot plus several upstream connections.
+# Caps concurrent research; the buckets limit rate, not how many run at once.
 _research_slots = ConcurrencySlots(
     per_key=RESEARCH_SLOTS_PER_USER,
     total=RESEARCH_SLOTS_GLOBAL,
 )
+
+# Daily spend caps. The token buckets limit rate, not total.
+_spend_store = spend_guard.PostgresSpendStore(get_admin_client)
 
 _TOO_MANY_IN_FLIGHT = (
     "Too many research requests in progress. Wait for the current one to finish."
@@ -71,8 +69,13 @@ _TOO_MANY_IN_FLIGHT = (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     warn_if_multiprocess(logger)
-    # Connect to Supabase at startup (in a thread: the connect is blocking and can
-    # retry with sleeps) so the first request doesn't pay for it.
+    if spend_guard.ENABLED and get_admin_client() is None:
+        logger.error(
+            "Spend guard is enabled but SUPABASE_SERVICE_ROLE_KEY is not configured. It fails "
+            "closed, so research, follow-ups and audio will all return 503. Set the key, or "
+            "SPEND_GUARD_ENABLED=false for local development only."
+        )
+    # Connect at startup so the first request doesn't pay for it.
     await asyncio.to_thread(get_database_v2)
     yield
 
@@ -86,16 +89,8 @@ app = FastAPI(
 
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 
-# ORDER IS LOAD-BEARING: this is registered BEFORE CORSMiddleware on purpose.
-#
-# Starlette's add_middleware does user_middleware.insert(0, ...) and
-# build_middleware_stack wraps with reversed(), so the LAST-added middleware
-# ends up OUTERMOST. Adding CORS after this one makes CORS wrap it, which is
-# what lets a 429 from here still carry its Access-Control-Allow-Origin header.
-#
-# Swap these two calls and the browser reports an opaque CORS failure instead
-# of a rate limit, with no 429 visible in the console at all. There is a test
-# for exactly this in tests/test_rate_limit.py.
+# Must be added before CORSMiddleware: the last-added middleware is outermost, so
+# CORS wraps this and its 429s keep their CORS headers. Covered in test_rate_limit.py.
 app.add_middleware(
     RateLimitMiddleware,
     store=_rate_limit_store,
@@ -109,15 +104,18 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Cross-origin JS can only read response headers listed here.
+    expose_headers=[
+        "Retry-After",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        spend_guard.MARKER_HEADER,
+    ],
 )
 
-# ============================================
-# MODELS
-# ============================================
-
 class ResearchRequest(BaseModel):
-    # Unbounded input becomes unbounded OpenAI/Tavily spend per call; this
-    # rejects up front rather than truncating silently deep in the pipeline.
+    # Bounded because input length drives OpenAI/Tavily cost.
     query: str = Field(..., min_length=1, max_length=2000)
     max_iterations: int = 8
     use_cache: bool = True
@@ -140,12 +138,7 @@ class ResearchResponse(BaseModel):
     messages: List[Message]
 
 class AudioRequest(BaseModel):
-    # TTS is billed per character, so an unbounded field is an unbounded bill.
-    # 15000 is VettanTTS.RECOMMENDED_MAX, the point at which the audio layer
-    # already truncates — this rejects up front exactly what would have been
-    # silently discarded. A Field constraint yields FastAPI's standard 422 and
-    # so avoids raising inside generate_audio, whose except block would launder
-    # an HTTPException into a 500.
+    # Matches VettanTTS.RECOMMENDED_MAX; TTS is billed per character.
     text: str = Field(..., min_length=1, max_length=15000)
     voice: Literal["nova", "alloy", "echo", "fable", "onyx", "shimmer"] = "nova"
 
@@ -155,24 +148,14 @@ class UpdateSessionRequest(BaseModel):
     isFavorite: Optional[bool] = None
     is_favorite: Optional[bool] = None
 
-# ============================================
-# AUTHENTICATION
-#
-# Every research and history route depends on get_current_user. The returned
-# AuthedUser carries BOTH the user id (for application-layer user_id filters)
-# and the raw token (so the database handle can run as that user and let RLS
-# enforce the same rule independently).
-# ============================================
-
+# The token is kept so the database handle runs as this user and RLS applies too.
 @dataclass(frozen=True)
 class AuthedUser:
     id: str
     token: str
 
 
-# One shared anon client for token verification. auth.get_user(token) takes the
-# token per call, so this is stateless and safe to share — unlike the PostgREST
-# client, which must be per-caller.
+# Safe to share: auth.get_user() takes the token per call. PostgREST clients are per-caller.
 _auth_client = None
 _auth_client_lock = threading.Lock()
 
@@ -198,10 +181,7 @@ def _get_auth_client():
 
 
 def _verify_access_token(authorization: Optional[str]) -> AuthedUser:
-    """
-    Validate a 'Bearer <token>' Authorization header against Supabase auth
-    and return the authenticated user, or raise HTTPException.
-    """
+    """Validate a Bearer token with Supabase auth, or raise 401/503."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or malformed Authorization header")
 
@@ -225,28 +205,12 @@ def _verify_access_token(authorization: Optional[str]) -> AuthedUser:
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> AuthedUser:
-    """FastAPI dependency: the verified caller, or 401."""
-    # get_user() is a blocking network call; keep it off the event loop.
+    # get_user() blocks on the network; keep it off the event loop.
     return await asyncio.to_thread(_verify_access_token, authorization)
 
 
-# ============================================
-# PER-USER RATE LIMITS
-#
-# Each of these is a drop-in replacement for get_current_user that also charges
-# the request against a token bucket keyed by the authenticated user id. They
-# return the same AuthedUser, so handler bodies are unchanged.
-#
-# The cost of a request varies by an order of magnitude — one /api/research
-# call spends ~4 Tavily credits and two OpenAI calls, one /api/history call is
-# a single cheap read — so they draw on separate buckets rather than one global
-# request count.
-#
-# research and research/stream deliberately SHARE a bucket: the frontend falls
-# back from the stream to the plain endpoint when the stream fails, so separate
-# buckets would hand every user twice the intended budget and turn one 429 into
-# a second paid request.
-# ============================================
+# get_current_user plus a per-user bucket. research and research/stream share one
+# because the frontend falls back from the stream to the plain endpoint.
 
 research_user = rate_limited("research", get_current_user, _rate_limit_store)
 audio_user = rate_limited("audio", get_current_user, _rate_limit_store)
@@ -256,24 +220,14 @@ account_user = rate_limited("account", get_current_user, _rate_limit_store)
 
 
 def _db_for(user: AuthedUser):
-    """
-    Database handle bound to this caller's JWT.
-
-    Falls back to nothing rather than to the shared anon handle: serving a
-    request with an unscoped client is exactly the failure being fixed.
-    """
+    """Database handle bound to this caller's JWT. Never falls back to an unscoped client."""
     return get_user_scoped_db(user.token)
 
 
-# ============================================
-# PERSISTENCE HELPERS
-#
-# The response is built from in-memory messages; the database writes happen
-# after it is sent (BackgroundTasks), so users never wait on them. The same
-# message dicts are returned and saved, so ids in the response match the rows.
-# ============================================
+# Saves run as background tasks after the response is sent. The same message dicts
+# are returned and saved, so response ids match the rows.
 
-# session_id -> event that is set once that session's background save finishes
+# session_id -> event set when that session's background save finishes.
 _pending_saves: Dict[str, threading.Event] = {}
 
 
@@ -282,7 +236,6 @@ def _now_iso() -> str:
 
 
 def _sse(event: str, data: Dict[str, Any]) -> str:
-    """One server-sent-events frame."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
@@ -327,7 +280,7 @@ def _finish_pending_save(session_id: str, event: threading.Event) -> None:
 
 
 async def _wait_for_pending_save(session_id: str, timeout: float = 10.0) -> None:
-    """If this session is still being saved, wait for it (a fast follow-up would otherwise find no rows)."""
+    """Wait for an in-flight save, or a quick follow-up finds no rows."""
     event = _pending_saves.get(session_id)
     if event and not event.is_set():
         logger.info(f"Waiting for pending save of session {session_id[:8]}")
@@ -337,7 +290,7 @@ async def _wait_for_pending_save(session_id: str, timeout: float = 10.0) -> None
 
 
 async def _wait_for_all_pending_saves(timeout: float = 10.0) -> None:
-    """Let in-flight background saves land so a history read right after a query includes it."""
+    """So a history read right after a query includes it."""
     for session_id in list(_pending_saves):
         await _wait_for_pending_save(session_id, timeout)
 
@@ -353,12 +306,7 @@ def _persist_new_session(
     messages: List[Dict[str, Any]],
     user_id: str
 ) -> None:
-    """
-    Background task: save a new session and its two messages (retries once).
-
-    Runs after the response is sent. `db` must be the caller's token-scoped
-    handle, captured at request time — the request scope is gone by now.
-    """
+    """Save a new session and its messages, retrying once. `db` must be the caller's scoped handle."""
     started = time.perf_counter()
     try:
         for attempt in (1, 2):
@@ -373,9 +321,7 @@ def _persist_new_session(
                     messages=messages
                 )
             except DuplicateSessionError:
-                # Permanent: the same insert will be rejected identically, so a
-                # retry only adds a second failure and a second's delay. The
-                # client discovers this when the session is absent from history.
+                # Permanent, so don't retry.
                 logger.error(
                     f"Session {session_id[:8]} not saved: this account already has that query"
                 )
@@ -400,7 +346,7 @@ def _persist_followup(
     messages: List[Dict[str, Any]],
     user_id: str
 ) -> None:
-    """Background task: save a follow-up's user and assistant messages (retries once)."""
+    """Save a follow-up's messages, retrying once."""
     started = time.perf_counter()
     try:
         for attempt in (1, 2):
@@ -417,10 +363,6 @@ def _persist_followup(
         _finish_pending_save(session_id, event)
 
 
-# ============================================
-# ENDPOINTS
-# ============================================
-
 @app.get("/")
 async def root():
     return {"status": "Vettan AI Backend", "version": "5.0.0"}
@@ -431,20 +373,15 @@ async def health_check():
         db = get_database_v2()
         db_status = db.is_connected if db else False
         schema_ready = bool(db and db.schema_ready)
-        # Re-probe while degraded so /health reflects a migration applied since
-        # startup without needing a restart.
+        # Re-probe so a migration applied since startup shows up without a restart.
         if db and db_status and not schema_ready:
             schema_ready = db.check_schema()
     except Exception:
         db_status = False
         schema_ready = False
 
-    # A reachable database with the wrong schema is not healthy: saves fail and
-    # history reads empty. Report that distinctly rather than as "healthy".
-    #
-    # account_deletion_configured is informational only and does not affect
-    # `status`: it was missing on Render for a while with nothing surfacing it
-    # anywhere except a 503 on the delete-account button itself.
+    # Wrong schema counts as degraded: saves fail and history reads empty.
+    # account_deletion_configured is informational and doesn't affect status.
     return {
         "status": "healthy" if (db_status and schema_ready) else "degraded",
         "database": db_status,
@@ -459,21 +396,11 @@ async def health_check():
 
 
 def _require_schema(db) -> None:
-    """
-    Refuse to serve when the tenant-isolation schema is absent.
-
-    Without this the app runs an expensive research job, returns it, and then
-    silently fails to persist it — and history comes back empty with no error
-    anywhere the user can see. A 503 naming the cause is far better than
-    quietly losing the work.
-    """
+    """503 if the user_id schema is missing, rather than running paid work that can't be saved."""
     if db is None or db.schema_ready:
         return
 
-    # Re-probe before refusing. schema_ready is decided at startup, so without
-    # this you would apply the migration and still get 503 until a restart,
-    # which reads as "the fix didn't work". Only runs while degraded, so it
-    # costs nothing in the normal case.
+    # Re-probe so an applied migration takes effect without a restart.
     if db.check_schema():
         logger.info("Schema became ready - migration applied; resuming normal service")
         return
@@ -496,21 +423,10 @@ async def research(
     user: AuthedUser = Depends(research_user)
 ):
     """
-    Main research endpoint with full conversation threading. Follow-ups are
-    answered via OpenAI chat directly (faster, and keeps conversation context)
-    rather than re-running the full research pipeline.
-
-    LATENCY: the response is built from in-memory messages and all database
-    writes run after it is sent (see PERSISTENCE HELPERS), so the request only
-    waits on the cache check (new queries) or one history read (follow-ups).
-
-    AUTHORIZATION: every database call below goes through this caller's scoped
-    handle and passes user.id. A session_id supplied by the client is never
-    trusted on its own.
+    Research or follow-up, non-streaming. Follow-ups use chat with history instead of
+    re-running the pipeline. Every DB call is scoped to the caller.
     """
-    # Same in-flight cap as the streaming endpoint, and the same slots: this is
-    # the fallback the frontend uses when a stream fails, so it is exactly as
-    # expensive and must not be a way around the limit.
+    # Same slots as the stream endpoint, since the frontend falls back to this one.
     if not _research_slots.try_acquire(user.id):
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
@@ -526,19 +442,14 @@ async def research(
         logger.info(f"Follow-up: {request.is_followup}")
         logger.info("="*60)
         
-        # ============================================
-        # FOLLOW-UP QUERY HANDLING
-        # ============================================
         if request.session_id and request.is_followup:
             logger.info(f"Processing follow-up in session: {request.session_id[:8]}")
             
             if not db or not db.is_connected:
                 raise HTTPException(status_code=503, detail="Database required for follow-ups")
             
-            # If this session's first save is still in flight, let it finish
             await _wait_for_pending_save(request.session_id)
 
-            # STEP 1: Get conversation history FOR CONTEXT (the only DB read on the path)
             logger.info(f"Loading conversation history...")
             db_started = time.perf_counter()
             conversation_history = await asyncio.to_thread(
@@ -546,21 +457,20 @@ async def research(
             )
             logger.info(f"[DB] get_conversation_history {time.perf_counter() - db_started:.2f}s")
 
-            # Empty also means "exists but belongs to someone else" — the data
-            # layer returns nothing for unowned sessions. Same 404 either way,
-            # so this cannot be used to probe which session ids are real.
+            # Empty also means "not yours"; same 404 so ids can't be probed.
             if not conversation_history:
                 logger.error(f"No history found for session: {request.session_id[:8]}")
                 raise HTTPException(status_code=404, detail="Conversation not found")
 
-            # STEP 2: The user's question, built in memory (saved after the response)
             user_msg = _new_message('user', request.query, created_at=request_started_iso)
 
-            # The model sees the history including the new question, as before
-            # (previously the question was saved and read back).
             context_history = conversation_history + [user_msg]
 
             logger.info(f"Context prepared with {len(context_history[-6:])} recent messages")
+
+            await spend_guard.charge(
+                _spend_store, user.id, "followup", spend_guard.cost_usd("followup")
+            )
 
             result = await handle_followup(
                 query=request.query,
@@ -571,7 +481,6 @@ async def research(
             citations = result.get('citations', [])
             metadata = result.get('metadata', {})
 
-            # STEP 3: The AI response, built in memory
             assistant_msg = _new_message(
                 'assistant',
                 ai_content,
@@ -582,13 +491,11 @@ async def research(
                 }
             )
 
-            # STEP 4: Save both messages after the response is sent
             pending = _register_pending_save(request.session_id)
             background_tasks.add_task(
                 _persist_followup, db, pending, request.session_id, [user_msg, assistant_msg], user.id
             )
 
-            # STEP 5: Full thread for the frontend (history + this exchange, no re-read)
             formatted_messages = [
                 _to_message(msg) for msg in conversation_history + [user_msg, assistant_msg]
             ]
@@ -610,9 +517,6 @@ async def research(
                 messages=formatted_messages
             )
         
-        # ============================================
-        # NEW CONVERSATION
-        # ============================================
         logger.info(f"NEW conversation: {request.query[:100]}")
 
         cached_result = None
@@ -622,9 +526,7 @@ async def research(
                 cached_result = await asyncio.to_thread(db.check_cache, request.query, user.id)
                 logger.info(f"[DB] check_cache {time.perf_counter() - db_started:.2f}s")
                 if cached_result and cached_result.get('user_id') != user.id:
-                    # check_cache already filters by user_id; this is a belt-and-braces
-                    # guard because a hit hands its session id back to the caller, who
-                    # may then write follow-ups into it.
+                    # check_cache filters by user already; a hit hands out its session id.
                     logger.error("Cache returned a session owned by another user - discarding")
                     cached_result = None
                 if cached_result:
@@ -645,9 +547,11 @@ async def research(
             except Exception as e:
                 logger.warning(f"Cache check failed: {e}")
         
-        # Cache miss — run new parallel pipeline
         is_new_session = not cached_result
         if is_new_session:
+            await spend_guard.charge(
+                _spend_store, user.id, "research", spend_guard.cost_usd("research")
+            )
             result = await research_complete(request.query)
             session_id = str(uuid.uuid4())
         else:
@@ -655,8 +559,7 @@ async def research(
 
         output = result.get('output', '')
 
-        # Build the initial thread in memory. Nulls are stripped from citations and
-        # metadata, matching what save_session stores.
+        # Nulls stripped to match what save_session stores.
         user_msg = _new_message('user', request.query, created_at=request_started_iso)
         assistant_msg = _new_message(
             'assistant',
@@ -669,7 +572,6 @@ async def research(
         )
         formatted_messages = [_to_message(user_msg), _to_message(assistant_msg)]
 
-        # Save after the response is sent (creates the session and its two messages)
         if is_new_session:
             if db and db.is_connected and len(output) > 100:
                 pending = _register_pending_save(session_id)
@@ -711,8 +613,6 @@ async def research(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to process research request")
     finally:
-        # This handler builds its response before returning, so unlike the
-        # streaming one the slot is safe to release here.
         _research_slots.release(user.id)
 
 @app.post("/api/research/stream")
@@ -722,20 +622,13 @@ async def research_stream_endpoint(
     user: AuthedUser = Depends(research_user)
 ):
     """
-    Streaming counterpart of /api/research. Same request body, but the answer is
-    sent as server-sent events so the UI can show progress instead of a spinner:
+    Streaming /api/research. SSE events:
 
-        stage   {phase, sub_queries}   sub-queries being searched
-        sources {citations}            the sources the answer will cite
-        token   {text}                 answer text, as it is generated
+        stage   {phase, sub_queries}
+        sources {citations}
+        token   {text}
         done    {session_id, user_message_id, assistant_message_id, citations, metadata}
         error   {message}
-
-    Persistence works exactly as on /api/research: ids are generated up front and
-    the rows are written by a background task after the stream closes.
-
-    AUTHORIZATION: as on /api/research, every database call uses this caller's
-    token-scoped handle and passes user.id.
     """
     db = _db_for(user)
     _require_schema(db)
@@ -748,22 +641,28 @@ async def research_stream_endpoint(
     logger.info(f"Session: {request.session_id[:8] if request.session_id else 'NEW'} | Follow-up: {is_followup}")
     logger.info("=" * 60)
 
-    # Claimed here rather than in a dependency, and released inside the
-    # generator rather than in a `yield` dependency's teardown. FastAPI closes
-    # its AsyncExitStack before the response is handed back to Starlette, so a
-    # yield-dependency's finally would fire before a single byte had streamed
-    # and the slot would guard nothing.
+    # Not a yield dependency: its teardown runs before the stream starts.
     if not _research_slots.try_acquire(user.id):
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
+
+    # Charge before streaming so a rejection is a real 429/503, not an SSE error.
+    # Refunded on cache hit or early exit.
+    spend_kind = "followup" if is_followup else "research"
+    try:
+        reservation = await spend_guard.charge(
+            _spend_store, user.id, spend_kind, spend_guard.cost_usd(spend_kind)
+        )
+    except BaseException:
+        # The generator's finally won't run, so release the slot here.
+        _research_slots.release(user.id)
+        raise
 
     async def event_stream():
         saved = False
         try:
-            # ============================================
-            # FOLLOW-UP
-            # ============================================
             if is_followup:
                 if not db or not db.is_connected:
+                    await spend_guard.refund(_spend_store, reservation)
                     yield _sse("error", {"message": "Database required for follow-ups"})
                     return
 
@@ -778,6 +677,7 @@ async def research_stream_endpoint(
                 # Empty also covers "owned by someone else" — see /api/research.
                 if not history:
                     logger.error(f"No history found for session: {request.session_id[:8]}")
+                    await spend_guard.refund(_spend_store, reservation)
                     yield _sse("error", {"message": "Conversation not found"})
                     return
 
@@ -821,9 +721,6 @@ async def research_stream_endpoint(
                 })
                 return
 
-            # ============================================
-            # NEW CONVERSATION — cache first
-            # ============================================
             cached = None
             if db and request.use_cache:
                 try:
@@ -831,8 +728,6 @@ async def research_stream_endpoint(
                     cached = await asyncio.to_thread(db.check_cache, request.query, user.id)
                     logger.info(f"[DB] check_cache {time.perf_counter() - db_started:.2f}s")
                     if cached and cached.get('user_id') != user.id:
-                        # See /api/research: a cache hit hands its session id to the
-                        # caller, so double-check ownership before adopting it.
                         logger.error("Cache returned a session owned by another user - discarding")
                         cached = None
                     if cached:
@@ -845,6 +740,7 @@ async def research_stream_endpoint(
 
             if cached:
                 logger.info("CACHE HIT - streaming cached result")
+                await spend_guard.refund(_spend_store, reservation)
                 citations = cached.get('citations', [])
                 metadata = {
                     **cached.get('metadata', {}),
@@ -865,9 +761,6 @@ async def research_stream_endpoint(
                 })
                 return
 
-            # ============================================
-            # NEW CONVERSATION — run the pipeline
-            # ============================================
             session_id = str(uuid.uuid4())
             final = None
 
@@ -926,8 +819,7 @@ async def research_stream_endpoint(
             })
 
         except asyncio.CancelledError:
-            # Client went away mid-answer. Nothing is persisted: a truncated
-            # answer should not become a saved session.
+            # Client disconnected; don't save a truncated answer.
             logger.info(f"Stream aborted by client after {time.perf_counter() - request_started:.2f}s (nothing saved)")
             raise
         except Exception as e:
@@ -937,8 +829,7 @@ async def research_stream_endpoint(
             if not saved:
                 yield _sse("error", {"message": "Failed to process research request"})
         finally:
-            # Runs on normal completion, on error, and on the GeneratorExit
-            # raised when the client disconnects mid-answer.
+            # Also runs on GeneratorExit when the client disconnects.
             _research_slots.release(user.id)
 
     return StreamingResponse(
@@ -957,7 +848,7 @@ async def get_session_messages(
     session_id: str,
     user: AuthedUser = Depends(read_user)
 ):
-    """Get all messages in conversation thread (caller's own sessions only)"""
+    """Messages in a session owned by the caller."""
     try:
         logger.info(f"Fetching messages for session: {session_id[:8]}")
 
@@ -1002,13 +893,7 @@ async def generate_audio(
     request: AudioRequest,
     user: AuthedUser = Depends(audio_user)
 ):
-    """
-    Generate audio from text.
-
-    Auth-gated like every other route: it spends OpenAI TTS credits per call and
-    was the one endpoint left open, so anyone could bill this project's key.
-    The caller's identity is not otherwise needed — no data is read or written.
-    """
+    """Text to speech. Authenticated because it spends OpenAI credits."""
     try:
         if not request.text:
             raise HTTPException(status_code=400, detail="No text provided")
@@ -1018,15 +903,20 @@ async def generate_audio(
         tts = get_tts()
         speech_text = tts.prepare_text_for_speech(request.text)
 
-        # Long text is split into several OpenAI calls, so one request here can
-        # cost many times what the flat charge in audio_user accounted for.
-        # Drain the difference, but DON'T gate on the verdict: this call is
-        # already in flight, and raising here would be caught by the except
-        # below and laundered into a 500. The depletion is what blocks the
-        # *next* request.
+        # Long text costs several calls. Charge the extra to the bucket without gating,
+        # so the next request is the one that gets limited.
         extra_calls = math.ceil(len(speech_text) / VettanTTS.SAFE_CHUNK_SIZE) - 1
         if extra_calls > 0:
             await _rate_limit_store.consume(f"audio:{user.id}", POLICIES["audio"], cost=extra_calls)
+
+        # Per character: estimate_cost() caps at RECOMMENDED_MAX, chunked TTS doesn't.
+        await spend_guard.charge(
+            _spend_store,
+            user.id,
+            "audio",
+            spend_guard.audio_cost_usd(len(speech_text)),
+            units=len(speech_text),
+        )
 
         audio_bytes = tts.generate_audio(text=speech_text, voice=request.voice)
         
@@ -1048,10 +938,6 @@ async def generate_audio(
         }
         
     except HTTPException:
-        # Without this, the 400 and 500 raised above are caught by the clause
-        # below and re-raised as a 500 with detail "400: No text provided" —
-        # and any 429 would be laundered the same way. Every other handler in
-        # this file has this guard; this one was missing it.
         raise
     except Exception as e:
         logger.error(f"Audio generation failed: {e}")
@@ -1062,12 +948,7 @@ async def get_history(
     limit: int = Query(50, ge=1, le=100),
     user: AuthedUser = Depends(read_user)
 ):
-    """
-    Get the authenticated caller's conversation history.
-
-    `limit` is bounded: it used to be an unbounded client-controlled integer, so
-    ?limit=100000 dumped the table.
-    """
+    """The caller's recent sessions."""
     try:
         logger.info(f"📚 Fetching history: limit={limit}")
         await _wait_for_all_pending_saves()
@@ -1095,8 +976,6 @@ async def get_history(
         return {"sessions": []}
 
     except HTTPException:
-        # Preserve deliberate status codes (e.g. the 503 from _require_schema);
-        # without this they were being rewritten as an opaque 500.
         raise
     except Exception as e:
         logger.error(f"History fetch failed: {e}")
@@ -1107,12 +986,7 @@ async def get_session(
     session_id: str,
     user: AuthedUser = Depends(read_user)
 ):
-    """
-    Get complete session with FULL message history
-
-    Returns ALL messages in the thread — but only for a session this caller
-    owns. Sessions belonging to someone else 404 exactly as missing ones do.
-    """
+    """A session and all its messages. Someone else's session is a 404, same as a missing one."""
     try:
         logger.info("="*60)
         logger.info(f"GET SESSION: {session_id[:8]}")
@@ -1122,7 +996,6 @@ async def get_session(
         if not db or not db.is_connected:
             raise HTTPException(status_code=503, detail="Database not connected")
 
-        # Get session metadata (scoped: None when missing OR not owned)
         session_data = db.get_session_by_id(session_id, user.id)
         if not session_data:
             logger.error(f"Session not found or not owned: {session_id[:8]}")
@@ -1130,16 +1003,13 @@ async def get_session(
 
         logger.info(f"Session found: {session_data.get('query', 'N/A')[:50]}")
 
-        # Get FULL message history
         messages = db.get_conversation_history(session_id, user.id)
         
         if not messages:
             logger.warning(f"No messages found for session: {session_id[:8]}")
             messages = []
         else:
-            # Message bodies are user content, not diagnostic data - log only
-            # the count, not the text, so logs don't become a second copy of
-            # every conversation.
+            # Log the count only; message bodies are user content.
             logger.info(f"Loaded {len(messages)} messages from database")
         
         formatted_messages = [
@@ -1181,7 +1051,7 @@ async def update_session(
     request: UpdateSessionRequest,
     user: AuthedUser = Depends(write_user)
 ):
-    """Update session (rename/favorite) — caller's own sessions only"""
+    """Rename or favorite one of the caller's sessions."""
     try:
         logger.info(f"✏️ Updating session: {session_id[:8]}")
 
@@ -1226,15 +1096,7 @@ async def update_session(
 
 @app.delete("/api/account")
 async def delete_account(user: AuthedUser = Depends(account_user)):
-    """
-    Delete the authenticated user's Supabase auth account.
-
-    research_sessions.user_id references auth.users(id) ON DELETE CASCADE, and
-    messages.session_id cascades from research_sessions (0001_add_user_id.sql),
-    so removing the auth user now also removes that user's research history.
-    Sessions created before that migration have user_id NULL, belong to nobody,
-    and are unaffected.
-    """
+    """Delete the caller's auth account. Their sessions and messages cascade (migration 0001)."""
     user_id = user.id
 
     admin_client = get_admin_client()
@@ -1260,7 +1122,7 @@ async def delete_session(
     session_id: str,
     user: AuthedUser = Depends(write_user)
 ):
-    """Delete session and all messages — caller's own sessions only"""
+    """Delete one of the caller's sessions and its messages."""
     try:
         logger.info(f"🗑️ Deleting session: {session_id[:8]}")
 

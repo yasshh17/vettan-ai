@@ -1,12 +1,6 @@
 /**
- * Authenticated access to the Python backend.
- *
- * Every backend call must carry the caller's Supabase JWT. The backend derives
- * the user id from that token and scopes all queries by it — a request without
- * one is rejected with 401 rather than served someone else's data.
- *
- * Use these helpers rather than calling axios/fetch directly, so there is one
- * place where the header is attached and one place where 401 is handled.
+ * Authenticated backend calls. Use these instead of axios/fetch directly so the JWT
+ * is always attached and 401/429 are handled in one place.
  */
 
 import axios, { AxiosRequestConfig } from "axios"
@@ -23,54 +17,83 @@ export class UnauthenticatedError extends Error {
   }
 }
 
-/**
- * Thrown when the backend returned 429.
- *
- * `message` is the backend's own `detail` string, which already names a wait in
- * seconds, so it is safe to show to the user as-is. `retryAfterSeconds` is the
- * parsed Retry-After header, for anything that wants to count down.
- */
+/** A refused request. `message` is the backend's detail and is safe to show as-is. */
 export class RateLimitedError extends Error {
   readonly retryAfterSeconds: number
+  /** Value of X-Spend-Limit, or null for a regular rate limit. */
+  readonly limit: string | null
 
   constructor(
     message = "You're going a bit fast. Try again shortly.",
-    retryAfterSeconds = 30
+    retryAfterSeconds = 30,
+    limit: string | null = null
   ) {
     super(message)
     this.name = "RateLimitedError"
     this.retryAfterSeconds = retryAfterSeconds
+    this.limit = limit
   }
 }
 
-/**
- * Retry-After as a usable number of seconds.
- *
- * Clamped, because this value can end up in a setTimeout and a header is not
- * something to trust blindly.
- */
+/** Spend-guard 503. Subclassed so existing RateLimitedError handling applies. */
+export class CapacityError extends RateLimitedError {
+  constructor(message: string, retryAfterSeconds: number, limit: string) {
+    super(message, retryAfterSeconds, limit)
+    this.name = "CapacityError"
+  }
+}
+
+export function limitTitle(error: RateLimitedError, feature = "Research"): string {
+  if (error.limit === "user") return "Daily limit reached"
+  if (error.limit) return `${feature} unavailable`
+  return "Slow down a moment"
+}
+
+const SPEND_LIMIT_HEADER = "x-spend-limit"
+
+// A 503 counts only with X-Spend-Limit; other 503s belong to their callers.
+function refusalError(
+  status: number | undefined,
+  detail: string | undefined,
+  retryAfter: string | null | undefined,
+  spendLimit: string | null | undefined
+): RateLimitedError | null {
+  const limit = spendLimit || null
+  if (status === 429) {
+    return new RateLimitedError(detail || undefined, parseRetryAfter(retryAfter), limit)
+  }
+  if (status === 503 && limit) {
+    return new CapacityError(
+      detail || "This feature is temporarily unavailable. Please try again later.",
+      parseRetryAfter(retryAfter),
+      limit
+    )
+  }
+  return null
+}
+
+// Clamped: the value can end up in a setTimeout.
 function parseRetryAfter(raw: string | null | undefined): number {
   const seconds = Number.parseInt(raw ?? "", 10)
   if (!Number.isFinite(seconds)) return 30
   return Math.min(Math.max(seconds, 1), 3600)
 }
 
-/** Convert a 429 into a RateLimitedError; pass anything else through. */
+/** Convert a 429 or spend-guard 503 into a RateLimitedError; pass anything else through. */
 function asRateLimitError(error: unknown): unknown {
-  if (!axios.isAxiosError(error) || error.response?.status !== 429) return error
+  if (!axios.isAxiosError(error) || !error.response) return error
   const detail = (error.response.data as { detail?: string } | undefined)?.detail
-  return new RateLimitedError(
-    detail || undefined,
-    parseRetryAfter(error.response.headers?.["retry-after"] as string | undefined)
+  return (
+    refusalError(
+      error.response.status,
+      typeof detail === "string" ? detail : undefined,
+      error.response.headers?.["retry-after"] as string | undefined,
+      error.response.headers?.[SPEND_LIMIT_HEADER] as string | undefined
+    ) ?? error
   )
 }
 
-/**
- * Current access token, or null when signed out.
- *
- * getSession() refreshes the token if it has expired, so this stays valid
- * across long-lived tabs.
- */
+/** Current access token, or null. getSession() refreshes an expired one. */
 export async function getAccessToken(): Promise<string | null> {
   try {
     const supabase = createClient()
@@ -89,12 +112,7 @@ async function authHeaders(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token}` }
 }
 
-/**
- * Send the browser to sign-in after the session has gone away.
- *
- * Deliberately a hard navigation: it drops all in-memory React state, so no
- * previous user's data can linger on screen behind the redirect.
- */
+/** Hard navigation, so no previous user's data stays in memory. */
 export function redirectToSignIn(): void {
   if (typeof window === "undefined") return
   const next = encodeURIComponent(window.location.pathname + window.location.search)
@@ -116,16 +134,7 @@ export async function withAuthRedirect<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Authenticated axios wrappers
-// ---------------------------------------------------------------------------
-
-/**
- * One place where the token is attached and one place where 429 is translated.
- *
- * Deliberately not an axios interceptor: this module imports bare `axios`, so
- * an interceptor would also fire for every other axios caller in the app.
- */
+// Not an interceptor: that would apply to every axios caller in the app.
 async function request<T>(
   method: "get" | "post" | "patch" | "delete",
   url: string,
@@ -188,14 +197,16 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
     redirectToSignIn()
     throw new UnauthenticatedError("Session expired")
   }
-  if (res.status === 429) {
-    // Safe to read the body: this path always throws, so nothing downstream
-    // will try to consume the stream again.
+  if (res.status === 429 || (res.status === 503 && res.headers.get(SPEND_LIMIT_HEADER))) {
+    // Safe to read the body: this branch always throws.
     const body = (await res.json().catch(() => null)) as { detail?: string } | null
-    throw new RateLimitedError(
-      body?.detail || undefined,
-      parseRetryAfter(res.headers.get("retry-after"))
+    const refused = refusalError(
+      res.status,
+      body?.detail,
+      res.headers.get("retry-after"),
+      res.headers.get(SPEND_LIMIT_HEADER)
     )
+    if (refused) throw refused
   }
   return res
 }
