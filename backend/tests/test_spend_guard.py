@@ -349,8 +349,20 @@ check(f"/stream: a new research is charged -> {r.status_code}, spent={s.user_spe
 s = fresh_store()
 FakeDB.cached = CACHED_ROW
 r = client.post("/api/research/stream", json={"query": "cached"})
-check(f"/stream: a cache hit is refunded -> spent={s.user_spent(ALICE)}",
+check(f"/stream: a cache hit is free -> spent={s.user_spent(ALICE)}",
       r.status_code == 200 and "cached answer" in r.text and s.user_spent(ALICE) == 0)
+
+# Regression: with $0.07 of $0.08 spent, a cached answer was refused because the
+# charge ran before the cache lookup.
+for endpoint in ("/api/research/stream", "/api/research"):
+    s = fresh_store()
+    client.post("/api/research/stream", json={"query": "a"})
+    client.post("/api/research/stream", json={"query": "b"})
+    FakeDB.cached = CACHED_ROW
+    r = client.post(endpoint, json={"query": "cached"})
+    check(f"REGRESSION: {endpoint} serves a cached answer at the limit -> {r.status_code}",
+          r.status_code == 200 and "cached answer" in r.text and s.user_spent(ALICE) == 70_000,
+          r.text[:120])
 
 s = fresh_store()
 FakeDB.history = []

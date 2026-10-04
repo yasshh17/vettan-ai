@@ -69,6 +69,12 @@ _TOO_MANY_IN_FLIGHT = (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     warn_if_multiprocess(logger)
+    logger.info(
+        "Spend guard %s: user $%.2f/day, global $%.2f/day",
+        "on" if spend_guard.ENABLED else "OFF",
+        spend_guard.USER_DAILY_BUDGET_USD,
+        spend_guard.GLOBAL_DAILY_BUDGET_USD,
+    )
     if spend_guard.ENABLED and get_admin_client() is None:
         logger.error(
             "Spend guard is enabled but SUPABASE_SERVICE_ROLE_KEY is not configured. It fails "
@@ -416,6 +422,29 @@ def _require_schema(db) -> None:
     )
 
 
+async def _cached_session(db, query: str, user_id: str) -> Optional[Dict[str, Any]]:
+    """A usable cached session for this user, or None."""
+    if not db:
+        return None
+    try:
+        db_started = time.perf_counter()
+        cached = await asyncio.to_thread(db.check_cache, query, user_id)
+        logger.info(f"[DB] check_cache {time.perf_counter() - db_started:.2f}s")
+    except Exception as e:
+        logger.warning(f"Cache check failed: {e}")
+        return None
+    if not cached:
+        return None
+    if cached.get('user_id') != user_id:
+        # check_cache filters by user already; a hit hands out its session id.
+        logger.error("Cache returned a session owned by another user - discarding")
+        return None
+    report = cached.get('report', '')
+    if not (report and len(report) > 100 and 'stopped due to' not in report.lower()):
+        return None
+    return cached
+
+
 @app.post("/api/research", response_model=ResearchResponse)
 async def research(
     request: ResearchRequest,
@@ -519,34 +548,19 @@ async def research(
         
         logger.info(f"NEW conversation: {request.query[:100]}")
 
-        cached_result = None
-        if db and request.use_cache:
-            try:
-                db_started = time.perf_counter()
-                cached_result = await asyncio.to_thread(db.check_cache, request.query, user.id)
-                logger.info(f"[DB] check_cache {time.perf_counter() - db_started:.2f}s")
-                if cached_result and cached_result.get('user_id') != user.id:
-                    # check_cache filters by user already; a hit hands out its session id.
-                    logger.error("Cache returned a session owned by another user - discarding")
-                    cached_result = None
-                if cached_result:
-                    report = cached_result.get('report', '')
-                    if report and len(report) > 100 and 'stopped due to' not in report.lower():
-                        logger.info("CACHE HIT - Valid result")
-                        result = {
-                            'output': report,
-                            'citations': cached_result.get('citations', []),
-                            'metadata': {
-                                **cached_result.get('metadata', {}),
-                                'from_cache': True,
-                                'session_id': cached_result.get('id')
-                            }
-                        }
-                    else:
-                        cached_result = None
-            except Exception as e:
-                logger.warning(f"Cache check failed: {e}")
-        
+        cached_result = await _cached_session(db, request.query, user.id) if request.use_cache else None
+        if cached_result:
+            logger.info("CACHE HIT - Valid result")
+            result = {
+                'output': cached_result['report'],
+                'citations': cached_result.get('citations', []),
+                'metadata': {
+                    **cached_result.get('metadata', {}),
+                    'from_cache': True,
+                    'session_id': cached_result.get('id')
+                }
+            }
+
         is_new_session = not cached_result
         if is_new_session:
             await spend_guard.charge(
@@ -641,21 +655,28 @@ async def research_stream_endpoint(
     logger.info(f"Session: {request.session_id[:8] if request.session_id else 'NEW'} | Follow-up: {is_followup}")
     logger.info("=" * 60)
 
+    # Before the charge: a cached answer is free, even for a user at their limit.
+    cached = None
+    if not is_followup and request.use_cache:
+        cached = await _cached_session(db, request.query, user.id)
+
     # Not a yield dependency: its teardown runs before the stream starts.
     if not _research_slots.try_acquire(user.id):
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
     # Charge before streaming so a rejection is a real 429/503, not an SSE error.
-    # Refunded on cache hit or early exit.
-    spend_kind = "followup" if is_followup else "research"
-    try:
-        reservation = await spend_guard.charge(
-            _spend_store, user.id, spend_kind, spend_guard.cost_usd(spend_kind)
-        )
-    except BaseException:
-        # The generator's finally won't run, so release the slot here.
-        _research_slots.release(user.id)
-        raise
+    # Refunded on early exit.
+    reservation = None
+    if not cached:
+        spend_kind = "followup" if is_followup else "research"
+        try:
+            reservation = await spend_guard.charge(
+                _spend_store, user.id, spend_kind, spend_guard.cost_usd(spend_kind)
+            )
+        except BaseException:
+            # The generator's finally won't run, so release the slot here.
+            _research_slots.release(user.id)
+            raise
 
     async def event_stream():
         saved = False
@@ -721,26 +742,8 @@ async def research_stream_endpoint(
                 })
                 return
 
-            cached = None
-            if db and request.use_cache:
-                try:
-                    db_started = time.perf_counter()
-                    cached = await asyncio.to_thread(db.check_cache, request.query, user.id)
-                    logger.info(f"[DB] check_cache {time.perf_counter() - db_started:.2f}s")
-                    if cached and cached.get('user_id') != user.id:
-                        logger.error("Cache returned a session owned by another user - discarding")
-                        cached = None
-                    if cached:
-                        report = cached.get('report', '')
-                        if not (report and len(report) > 100 and 'stopped due to' not in report.lower()):
-                            cached = None
-                except Exception as e:
-                    logger.warning(f"Cache check failed: {e}")
-                    cached = None
-
             if cached:
                 logger.info("CACHE HIT - streaming cached result")
-                await spend_guard.refund(_spend_store, reservation)
                 citations = cached.get('citations', [])
                 metadata = {
                     **cached.get('metadata', {}),
