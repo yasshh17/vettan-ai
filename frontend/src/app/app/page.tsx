@@ -170,6 +170,8 @@ export default function Home() {
   const streamAbortRef = useRef<AbortController | null>(null)
   // Same reason: a rejected first query remounts the search bar.
   const pendingQueryRef = useRef<string | null>(null)
+  // Bumped on "New chat" so the hero search bar remounts empty.
+  const [searchBarKey, setSearchBarKey] = useState(0)
 
   const hasResults = messages.length > 0
   const hasStreamedText = Boolean(
@@ -280,6 +282,8 @@ export default function Home() {
       setMessages([])
       setError(null)
       setCurrentSessionId(null)
+      pendingQueryRef.current = null
+      setSearchBarKey((k) => k + 1)
       setTimeout(() => mainContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" }), 0)
     }
   }
@@ -524,6 +528,7 @@ export default function Home() {
 
             <div className="w-full max-w-[850px] space-y-10">
               <StickySearchBar
+                key={searchBarKey}
                 onResultsUpdate={handleResultsUpdate}
                 isLoading={isLoading}
                 setIsLoading={setIsLoading}
