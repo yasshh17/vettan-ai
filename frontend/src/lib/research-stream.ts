@@ -31,6 +31,8 @@ export type StreamEvent =
       assistant_created_at?: string
     }
   | { type: "error"; message: string }
+  /** Refused by moderation: drop anything streamed so far. */
+  | { type: "blocked"; message: string }
 
 function parseFrame(frame: string): StreamEvent | null {
   let event = ""
