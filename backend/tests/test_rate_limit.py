@@ -1,53 +1,21 @@
 """
-Rate limiter tests.
-
-Same shape as test_isolation.py — no pytest dependency, run it directly:
+Rate limiter tests. No server or network needed:
 
     python tests/test_rate_limit.py
 
-Four sections, deliberately ordered cheapest first:
-
-  1. Bucket arithmetic against a fake clock. No server, no sleeping.
-  2. client_ip(), table-driven. Pure function.
-  3. The per-user dependency layer, over HTTP through the real app.
-  4. The pre-auth IP middleware, wrapped around a stub ASGI app so its
-     capacity can be set independently of the app's.
-
-The two highest-value cases are easy to miss, so they are called out where
-they appear:
-
-  * A 429 must still carry Access-Control-Allow-Origin. The rate limit
-    middleware is registered BEFORE CORSMiddleware in main.py precisely so
-    that CORS ends up wrapping it (Starlette's add_middleware inserts at
-    index 0, so last-added is outermost). Swap those two calls and the
-    browser sees an opaque CORS failure with no 429 anywhere — a bug that
-    looks nothing like its cause.
-
-  * X-Forwarded-For must be read from the RIGHT. Reading the leftmost entry
-    is the common implementation and it is spoofable: the client sends its
-    own XFF, the proxy appends, and `split(",")[0]` hands back whatever the
-    attacker wrote.
+Key regressions: a 429 must keep its CORS headers, and X-Forwarded-For is read from the right.
 """
 import os
 import sys
 
-# Cleared BEFORE importing main, so no client is ever built. Set to "" rather
-# than deleted: main.py (and supabase_client_v2.py) call load_dotenv() on
-# import, which — with a real backend/.env on disk — refills any key that is
-# ABSENT from os.environ (load_dotenv defaults to override=False, implemented
-# as os.environ.setdefault). Deleting the key makes it absent again right
-# before import runs load_dotenv(), silently undoing this: the /health check
-# below used to reach the real, now-live-credentialed get_database_v2() and
-# make a genuine (read-only) call to production Supabase on every local run.
-# An empty string is still "present", so setdefault leaves it alone, and
-# _connect()'s own `if not url or not key` treats "" as absent too.
+# Set to "" rather than deleted: load_dotenv() on import would refill a missing key
+# from backend/.env and connect to the real database.
 for _k in ("SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
     os.environ[_k] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("TAVILY_API_KEY", "test")
 
-# Policies are built from the environment when utils.rate_limit is first
-# imported, so every one of these must be set before any import below.
+# Policies read the environment on import, so set these first.
 os.environ["RATE_LIMIT_ENABLED"] = "true"
 os.environ["RATE_LIMIT_TRUSTED_HOPS"] = "1"
 os.environ["CORS_ORIGINS"] = "http://localhost:3000"
@@ -55,13 +23,12 @@ os.environ["CORS_ORIGINS"] = "http://localhost:3000"
 os.environ["RATE_LIMIT_READ_CAPACITY"] = "3"
 os.environ["RATE_LIMIT_READ_REFILL_PER_MIN"] = "60"
 os.environ["RATE_LIMIT_RESEARCH_CAPACITY"] = "2"
-# Slow on purpose. At 60/min a token is minted every second, and a request that
-# takes longer than that to serve refills its own cost — the bucket would never
-# appear to deplete and the test would pass vacuously.
+# Slow refill, or a slow request refills its own cost and the bucket never depletes.
 os.environ["RATE_LIMIT_RESEARCH_REFILL_PER_MIN"] = "1"
-# Must stay large: the IP layer runs first, and if it fires during section 3
-# every assertion there would be testing the wrong thing.
+# Large so the IP layer never fires during section 3.
 os.environ["RATE_LIMIT_IP_CAPACITY"] = "100000"
+# No service-role key, so the spend guard would fail closed. See test_spend_guard.py.
+os.environ["SPEND_GUARD_ENABLED"] = "false"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -84,10 +51,6 @@ def check(label, cond, detail=""):
         failures.append(label)
 
 
-# ══════════════════════════════════════════════
-# [1] Bucket arithmetic
-# ══════════════════════════════════════════════
-
 class FakeClock:
     """Monotonic time under test control, so refill needs no sleeping."""
 
@@ -105,8 +68,7 @@ _loop = asyncio.new_event_loop()
 
 
 def consume(store, key, policy, cost=1.0):
-    """consume() is async (Redis will need it) but never awaits — see the
-    invariant note on InMemoryTokenBucketStore.consume."""
+    """Run the async consume() synchronously; it never awaits."""
     return _loop.run_until_complete(store.consume(key, policy, cost))
 
 
@@ -131,9 +93,7 @@ check("  remaining is 0", d.remaining == 0, str(d))
 check("  retry_after is exact (6s at 10/min)", d.retry_after == 6, str(d))
 check("  limit reports capacity", d.limit == 10, str(d))
 
-# Rejections must not be charged. If they were, a client that keeps retrying
-# would push its own recovery further away on every attempt and never get back
-# in — the classic token-bucket footgun.
+# A rejected request must not be charged, or a retrying client never recovers.
 for _ in range(50):
     consume(store, "k", TEN_PER_MIN)
 clock.advance(6.0)
@@ -156,8 +116,7 @@ d = consume(store, "back", TEN_PER_MIN)
 check("a backwards clock mints nothing", d.remaining <= before, str(d))
 clock.advance(3600)
 
-# Weighted cost is the whole reason for a bucket over a window: one bucket,
-# different charges per endpoint.
+# Weighted cost: one bucket, different charge per endpoint.
 store2 = InMemoryTokenBucketStore(clock=clock)
 d = consume(store2, "w", TEN_PER_MIN, cost=4)
 check("cost=4 draws 4 tokens", d.allowed and d.remaining == 6, str(d))
@@ -177,8 +136,7 @@ check("  research:bob is untouched",
 check("  read:alice is untouched (class is part of the key)",
       consume(store3, "read:alice", TEN_PER_MIN).allowed)
 
-# Eviction. A bucket sitting at capacity is indistinguishable from one that was
-# never seen, so dropping it cannot change a future verdict.
+# Eviction is lossless: a full bucket behaves the same as a missing one.
 evict_clock = FakeClock()
 evict_store = InMemoryTokenBucketStore(clock=evict_clock)
 for i in range(600):
@@ -202,19 +160,13 @@ check("  and never records a key", kill_store.tracked_keys() == 0)
 rate_limit.ENABLED = True
 
 
-# ══════════════════════════════════════════════
-# [2] Client address extraction
-# ══════════════════════════════════════════════
-
 print("\n[2] X-Forwarded-For handling")
 
 CASES = [
     # (label, headers, peer, hops, expected)
     ("no XFF falls back to the socket peer", {}, "203.0.113.7", 1, "203.0.113.7"),
     ("single-entry XFF is used", {"x-forwarded-for": "203.0.113.7"}, "10.0.0.1", 1, "203.0.113.7"),
-    # THE regression guard. A client that sends its own XFF header gets it
-    # prepended to, not replaced. Reading [0] would return 1.2.3.4 here and let
-    # one source mint a fresh bucket per request.
+    # Regression: a client-supplied XFF is prepended to, so reading [0] is spoofable.
     ("REGRESSION: spoofed leftmost entry is ignored",
      {"x-forwarded-for": "1.2.3.4, 203.0.113.7"}, "10.0.0.1", 1, "203.0.113.7"),
     ("two trusted hops counts in from the right",
@@ -232,8 +184,7 @@ for label, headers, peer, hops, expected in CASES:
     got = client_ip(headers, peer, hops)
     check(f"{label} -> {got}", got == expected, f"expected {expected}")
 
-# IPv6: a residential allocation is a /64 or larger, so without collapsing,
-# one user rotates through addresses they already own and the layer is useless.
+# IPv6 collapses to /64, or one user can rotate through their own addresses.
 v6_a = client_ip({"x-forwarded-for": "2001:db8::1"}, None, 1)
 v6_b = client_ip({"x-forwarded-for": "2001:db8::dead:beef"}, None, 1)
 v6_c = client_ip({"x-forwarded-for": "2001:db8:1::1"}, None, 1)
@@ -242,10 +193,6 @@ check("  but different /64s do not", v6_a != v6_c, f"{v6_a} vs {v6_c}")
 
 _loop.close()
 
-
-# ══════════════════════════════════════════════
-# [3] Per-user limits over HTTP
-# ══════════════════════════════════════════════
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -276,10 +223,7 @@ class FakeDB:
         return None
 
 
-# The research pipeline makes real calls to Tavily and OpenAI. Nothing here
-# tests the pipeline, and a test suite must not reach the network, so it is
-# replaced with something that returns instantly. Persistence is stubbed for
-# the same reason — it runs as a background task and FakeDB has no writer.
+# Stub the pipeline and persistence so nothing reaches the network.
 async def _fake_research(query, *args, **kwargs):
     return {"output": "stub answer " * 20, "citations": [], "metadata": {}}
 
@@ -322,10 +266,8 @@ check("X-RateLimit-Remaining is 0", r.headers.get("X-RateLimit-Remaining") == "0
 check("X-RateLimit-Reset parses as an int",
       r.headers.get("X-RateLimit-Reset", "").isdigit(), str(r.headers.get("X-RateLimit-Reset")))
 
-# Success headers come from the middleware, not the dependency: when a handler
-# returns a Response directly (as the SSE endpoint does), FastAPI never merges
-# the injected sub-response's headers. Reading them off the ASGI message avoids
-# that trap entirely — this asserts the plumbing works on a normal 200 too.
+# Success headers are set by the middleware because FastAPI skips the header
+# merge when a handler returns a Response directly (the SSE endpoint does).
 reset_buckets()
 first = client.get("/api/history")
 second = client.get("/api/history")
@@ -344,17 +286,8 @@ as_user(MALLORY)
 check("another user is unaffected by ALICE's exhaustion",
       client.get("/api/history").status_code == 200)
 
-# ---- the middleware-ordering regression guard ----
-#
-# This has to come from the MIDDLEWARE's 429, not the dependency's. A
-# dependency raises inside the router, so its response is built inside
-# CORSMiddleware either way and would keep its CORS headers no matter how the
-# two add_middleware calls are ordered. Only the IP layer's response, which is
-# constructed and sent by the middleware itself, can escape CORS.
-#
-# The app's IP capacity is deliberately huge so it never interferes with the
-# rest of this file, so reach into the live middleware instance and shrink it
-# just for this case.
+# Middleware-ordering regression: only the IP layer's own 429 can escape CORS,
+# so shrink the live middleware's capacity for this case.
 def _find_middleware(app, cls):
     node = app.middleware_stack
     while node is not None:
@@ -386,8 +319,7 @@ if ip_mw is not None:
 
     ip_mw.policy = original_policy
 
-# A dependency-layer 429 keeps its CORS headers too — same guarantee, different
-# path through the stack.
+# A dependency-level 429 keeps its CORS headers too.
 reset_buckets()
 as_user(ALICE)
 for _ in range(4):
@@ -427,8 +359,7 @@ as_user(ALICE)
 check("  and the user's bucket is untouched afterwards",
       client.get("/api/history").status_code == 200)
 
-# research and research/stream share one bucket. Two regressions in one case:
-# the shared key, and the 429 landing before the stream opens.
+# research and research/stream share one bucket, and the 429 lands before the stream opens.
 reset_buckets()
 as_user(ALICE)
 r1 = client.post("/api/research", json={"query": "hi"})
@@ -442,10 +373,6 @@ check("  and the 429 is JSON, not an SSE stream carrying an error frame",
 
 main.app.dependency_overrides.clear()
 
-
-# ══════════════════════════════════════════════
-# [4] The pre-auth IP middleware, in isolation
-# ══════════════════════════════════════════════
 
 print("\n[4] Pre-auth IP middleware (capacity 2)")
 
@@ -488,8 +415,7 @@ check("  and X-RateLimit-Limit", r.headers.get("X-RateLimit-Limit") == "2",
 check("a different address gets its own bucket",
       c.get("/api/history", headers=xff("198.51.100.4")).status_code == 200)
 
-# REGRESSION: reading the leftmost XFF entry would key this on 9.9.9.9 and let
-# it through. Reading from the right keys it on the exhausted 203.0.113.7.
+# Regression: keyed on the rightmost entry (exhausted), not the spoofed 9.9.9.9.
 r = c.get("/api/history", headers=xff("9.9.9.9, 203.0.113.7"))
 check(f"REGRESSION: a spoofed leftmost XFF cannot mint a fresh bucket -> {r.status_code}",
       r.status_code == 429, "client-supplied XFF prefix must be ignored")
@@ -515,10 +441,6 @@ check(f"RATE_LIMIT_ENABLED=false bypasses the middleware -> {set(off)}", set(off
 rate_limit.ENABLED = True
 
 
-# ══════════════════════════════════════════════
-# [5] In-flight concurrency cap
-# ══════════════════════════════════════════════
-
 from utils.rate_limit import ConcurrencySlots  # noqa: E402
 
 print("\n[5] Concurrency slots")
@@ -537,8 +459,7 @@ slots.release("alice")
 slots.release("bob")
 check("everything is handed back", slots.in_flight() == 0, str(slots.in_flight()))
 
-# Releasing more than was taken must not drive the counter negative — that
-# would silently raise the effective cap for everyone.
+# Over-releasing must not drive the counter negative and raise the cap.
 slots.release("nobody")
 check("an unmatched release does not go negative", slots.in_flight() == 0, str(slots.in_flight()))
 check("  and capacity is unchanged", slots.try_acquire("dave") and slots.in_flight() == 1)

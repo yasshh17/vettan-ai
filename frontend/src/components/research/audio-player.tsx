@@ -4,12 +4,9 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Volume2, Download, Loader2, Play, Pause, RotateCcw, Sparkles, X } from "lucide-react"
-import { authPost, API_BASE_URL, RateLimitedError } from "@/lib/auth-fetch"
+import { authPost, API_BASE_URL, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
 import { useToast } from "@/hooks/use-toast"
 
-// Was a bare axios call against a 127.0.0.1 default that differed from every
-// other caller's localhost default. /api/audio now requires a JWT like the rest
-// of the API, so this goes through the shared authenticated client.
 const API_URL = API_BASE_URL
 
 const VOICES = {
@@ -107,11 +104,9 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
       setCost(response.cost ?? 0)
       
     } catch (error) {
-      // This used to console.error and nothing else, so a failure just stopped
-      // the spinner with no explanation on screen.
       if (error instanceof RateLimitedError) {
         toast({
-          title: "Audio limit reached",
+          title: error.limit ? limitTitle(error, "Audio") : "Audio limit reached",
           description: error.message,
           variant: "destructive"
         })
@@ -181,11 +176,9 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
   
   return (
     <>
-      {/* Premium Toast Notification - Top Right */}
       {showNotification && (
         <div className="fixed top-6 right-6 z-50 animate-in slide-in-from-top-2 fade-in duration-300">
           <div className="bg-gradient-to-br from-purple-500/20 to-indigo-500/20 backdrop-blur-xl border-2 border-purple-500/40 rounded-2xl shadow-[0_8px_32px_rgba(139,92,246,0.3)] p-4 pr-12 max-w-sm">
-            {/* Close button */}
             <button
               onClick={() => setShowNotification(false)}
               className="absolute top-3 right-3 w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors"
@@ -194,7 +187,6 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
               <X className="w-4 h-4 text-neutral-300" />
             </button>
 
-            {/* Content */}
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
                 <Volume2 className="w-5 h-5 text-white" />
@@ -211,7 +203,6 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
               </div>
             </div>
 
-            {/* Progress bar - auto-dismiss indicator */}
             <div className="mt-3 h-1 bg-white/10 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-[5000ms] ease-linear"
@@ -230,7 +221,6 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
               Audio Version
             </CardTitle>
             
-            {/* Integrated success badge */}
             {isReady && (
               <span className="px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full text-green-400 text-xs font-medium flex items-center gap-1.5 animate-in fade-in duration-300">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>

@@ -1,8 +1,4 @@
-/**
- * Failed email links (expired, already used, or a failed code exchange) must
- * land on /sign-in?error=link_invalid so the sign-in page can explain what
- * happened, instead of silently dropping the user on the sign-in form.
- */
+// Failed email links must redirect to /sign-in?error=link_invalid.
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const exchangeCodeForSession = vi.fn()

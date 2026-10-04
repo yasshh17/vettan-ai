@@ -5,8 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel a still-running run for the same branch/PR when a new push arrives,
-# instead of letting two runs race each other.
+# A new push cancels the previous run for the same ref.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -37,9 +36,7 @@ jobs:
         run: npm test
 
       - name: Build
-        # NEXT_PUBLIC_* values here are placeholders for a production build
-        # check only — no secret is needed since the anon key / API URL are
-        # public by design, and no server is started against them.
+        # Placeholders; the build only needs them to exist.
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
@@ -47,12 +44,8 @@ jobs:
         run: npm run build
 
       - name: Dependency audit (fails on critical)
-        # TODO: tighten to --audit-level=high once next is upgraded past 16 —
-        # today there is one known, accepted "high" (postcss, bundled inside
-        # next's own dependency tree; GHSA-r28c-9q8g-f849 and related). Its
-        # only fix is next's next major, which is a deliberate separate
-        # upgrade, not something to silently block every PR on in the
-        # meantime. `critical` still catches a genuinely new, worse finding.
+        # TODO: raise to high after upgrading next past 16 (accepted postcss
+        # advisory GHSA-r28c-9q8g-f849, fixed only in next's next major).
         run: npm audit --audit-level=critical
 
   backend:
@@ -74,10 +67,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Tenant isolation + schema-readiness tests
-        # No Supabase/OpenAI/Tavily credentials are provided on purpose: both
-        # suites stub out the data layer and assert against a disconnected
-        # (degraded-mode) app, so they must pass with no external services
-        # reachable at all. See the top-of-file comments in each test.
+        # No credentials on purpose: the suites must pass with no external services.
         run: python tests/test_isolation.py
 
       - name: Rate limiter tests
@@ -85,6 +75,9 @@ jobs:
 
       - name: Account deletion tests
         run: python tests/test_account_delete.py
+
+      - name: Spend guard tests
+        run: python tests/test_spend_guard.py
 
   secret-scan:
     name: Secret scan

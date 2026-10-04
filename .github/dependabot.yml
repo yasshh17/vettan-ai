@@ -7,9 +7,7 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     groups:
-      # Cut down PR noise: routine patch/minor bumps land in one PR per week
-      # instead of one per package. Majors (e.g. the eventual Next 16) still
-      # get their own PR, since those need a deliberate look.
+      # Group patch/minor bumps weekly; majors get their own PR.
       routine-updates:
         update-types: ["minor", "patch"]
 

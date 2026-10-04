@@ -1,49 +1,22 @@
 """
-Tenant-isolation and schema-readiness tests.
-
-Runs against FastAPI's TestClient with the Supabase env vars cleared, so no
-request reaches a real database. No pytest dependency — run it directly:
+Tenant-isolation and schema-readiness tests. No database or network needed:
 
     python tests/test_isolation.py
-
-Covers:
-  1. Every protected route rejects an unauthenticated request with 401.
-  2. Malformed Authorization headers are rejected.
-  3. The *authenticated* user's id is what reaches the data layer.
-  4. Another user's session is a 404 on read, rename and delete (BOLA closed).
-  5. `limit` is bounded.
-  6. A missing user_id column surfaces as 503, never as an empty history.
-
-(6) is the regression guard. The tenant-isolation change added a hard dependency
-on research_sessions.user_id, but the migration had not been applied. Both the
-insert and the scoped select raised 42703, both handlers swallowed it, and the
-app reported itself healthy while saving nothing and returning an empty list.
-An empty history must never be how a schema failure looks.
 """
 import os
 import sys
 
-# Cleared BEFORE importing main, so no client is ever built. Set to "" rather
-# than deleted: main.py (and supabase_client_v2.py) call load_dotenv() on
-# import, which — with a real backend/.env on disk — refills any KEY THAT IS
-# ABSENT from os.environ (load_dotenv defaults to override=False, implemented
-# as os.environ.setdefault). Deleting the key makes it absent again right
-# before import runs load_dotenv(), silently undoing this. An empty string is
-# still "present", so setdefault leaves it alone, and _connect()'s own
-# `if not url or not key` treats "" as absent too — so this gets the isolation
-# the comment always claimed, instead of relying on every call site remembering
-# to route around the real client.
+# Set to "" rather than deleted: load_dotenv() on import would refill a missing key
+# from backend/.env and connect to the real database.
 for _k in ("SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
     os.environ[_k] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("TAVILY_API_KEY", "test")
 
-# This file drives the same routes dozens of times from one "client". With rate
-# limiting live it would eventually exhaust a bucket and start failing on 429
-# instead of on what it is actually checking — and it would do so only once
-# enough cases had been added, which is a miserable thing to debug. Limits have
-# their own tests in test_rate_limit.py.
+# Many requests from one client would otherwise start hitting 429s.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+# Otherwise the spend guard's own 503 would mask the schema-readiness 503s checked below.
+os.environ["SPEND_GUARD_ENABLED"] = "false"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -85,8 +58,6 @@ class FakeDB:
         self.schema_ready = schema_ready
 
     def check_schema(self):
-        # The real client re-probes here so an applied migration is picked up
-        # without a restart. The fake's verdict is fixed.
         return self.schema_ready
 
     def get_recent_sessions(self, user_id, limit=10):

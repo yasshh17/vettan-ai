@@ -156,8 +156,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
         description: "You've been signed out. We're sorry to see you go.",
       })
       handleOpenChange(false)
-      // The auth user is gone, so the server may reject the sign-out. Drop the
-      // local session and this tab's cached data regardless.
+      // The auth user is gone, so the server sign-out may fail.
       await signOutAndReset({ ignoreErrors: true })
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status

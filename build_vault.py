@@ -1,24 +1,11 @@
 #!/usr/bin/env python3
 """
-build_vault.py — Generate an Obsidian vault that visualizes a code repo's
-file structure AND import/dependency graph in 3D (via the "3D Graph" plugin).
+Generate an Obsidian vault of the repo: one note per file, linked to its folder and
+to the files it imports (Python and JS/TS).
 
-USAGE:
     python build_vault.py /path/to/vettan-ai /path/to/output-vault
 
-Then:
-  1. Open Obsidian -> "Open folder as vault" -> select the output-vault dir
-  2. Settings -> Community plugins -> turn off Restricted Mode -> Browse
-  3. Install "3D Graph" (by AlexW00) or "Graph 3D" plugin -> Enable it
-  4. Open via Command Palette ("3D Graph: Open") to see the 3D view
-
-WHAT IT DOES:
-  - Creates one Markdown note per source file in the repo
-  - Each note links to its parent folder's note (hierarchy edges)
-  - Each note links to other files it imports/requires (dependency edges),
-    resolved for Python, JS/TS, and basic relative imports
-  - Adds YAML frontmatter with file type / folder tags for graph coloring
-    (color groups can be set in Obsidian's Graph View settings by tag)
+Open the output folder as a vault and view it with the "3D Graph" community plugin.
 """
 
 import os
@@ -31,8 +18,7 @@ CODE_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".next", "dist", "build",
              "venv", ".venv", "env", ".pytest_cache", ".idea", ".vscode"}
 
-# Files that should never be turned into notes or have their contents read —
-# these commonly hold secrets / credentials.
+# Never read: these usually hold secrets.
 SKIP_FILE_NAMES_EXACT = {
     ".env", ".env.local", ".env.production", ".env.development",
     ".env.test", ".env.staging",
@@ -53,12 +39,8 @@ def is_secret_file(filename):
 
 def load_ts_path_aliases(repo_root):
     """
-    Read tsconfig.json (or jsconfig.json) compilerOptions.paths and return a
-    dict mapping alias prefix -> list of resolved base dirs, e.g.
-        {"@": [repo_root / "src"]}
-    Falls back gracefully if the file is missing or unparsable (tsconfig
-    allows comments/trailing commas which strict json.load rejects, so we
-    strip those first).
+    Alias prefix -> base dirs from tsconfig/jsconfig paths, e.g. {"@": [repo_root / "src"]}.
+    Comments and trailing commas are stripped first since json.load rejects them.
     """
     aliases = {}
     for cfg_name in ("tsconfig.json", "jsconfig.json"):

@@ -1,16 +1,6 @@
 /**
- * Regression test for the open-redirect finding from the 2026-09 security
- * audit (frontend/src/app/auth/callback/route.ts).
- *
- * The OAuth callback used to redirect to `${origin}${next}` where `next` was
- * whatever the caller passed in the `?next=` query param, unvalidated. A
- * value like `//evil.com` makes `${origin}${next}` become
- * `https://yoursite.com//evil.com`, which browsers resolve to `evil.com` -
- * sending a user who just authenticated straight to an attacker's site.
- *
- * The fix restricts `next` to same-site relative paths. This test drives the
- * real route handler (not a reimplementation of its logic) with a mocked
- * Supabase client, so it fails if the validation is ever loosened again.
+ * The OAuth callback must only redirect to same-site relative paths: `?next=//evil.com`
+ * would otherwise send a freshly signed-in user off-site.
  */
 import { describe, expect, it, vi } from "vitest"
 

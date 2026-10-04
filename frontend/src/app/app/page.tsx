@@ -16,7 +16,7 @@ import { authGet, withAuthRedirect } from "@/lib/auth-fetch"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-/** How often the growing answer is re-rendered. Tokens arrive far faster than this. */
+/** Re-render interval for the streaming answer; tokens arrive much faster. */
 const STREAM_FLUSH_MS = 80
 
 interface Citation {
@@ -41,10 +41,7 @@ interface ResearchResult {
   messages: Message[]
 }
 
-/**
- * Hide markdown that is only half-written, so a link or bold marker doesn't
- * flash as raw syntax while the answer streams in.
- */
+/** Hide half-written markdown so it doesn't flash as raw syntax while streaming. */
 function trimIncompleteMarkdown(text: string): string {
   let out = text
 
@@ -75,11 +72,7 @@ const PROSE_CLASSES = `prose prose-invert max-w-none
   [&_blockquote]:border-l-4 [&_blockquote]:!border-indigo-500 [&_blockquote]:!text-gray-300 [&_blockquote]:pl-4 [&_blockquote]:italic
   `
 
-/**
- * One row of the conversation. Memoized because a streaming answer re-renders
- * its own row ~12x a second, and re-parsing every earlier message with it would
- * get slower as the thread grows.
- */
+/** Memoized: the streaming row re-renders ~12x a second and shouldn't re-parse the others. */
 const MessageRow = memo(function MessageRow({
   message,
   isLastAssistant,
@@ -152,15 +145,13 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Distinct from `error`: the answer is on screen and correct, it just did not
-  // reach the user's history. Warning, not failure.
+  // The answer is shown but wasn't saved: a warning, not an error.
   const [notice, setNotice] = useState<string | null>(null)
   const [activeQuery, setActiveQuery] = useState<string | null>(null)
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
 
-  // Streaming answer state
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamStage, setStreamStage] = useState<{ subQueries: string[]; sources: Citation[] }>({
     subQueries: [],
@@ -175,19 +166,14 @@ export default function Home() {
   const isAtBottomRef = useRef(true)
   const scrollRafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
-  // Owned here, not in the search bar: that component unmounts mid-stream when
-  // the hero gives way to the docked bar, which would strand the controller.
+  // Owned here because the search bar unmounts mid-stream.
   const streamAbortRef = useRef<AbortController | null>(null)
-  // Same reason, for the query text: a rejected first-ever query flips
-  // isLoading true then back to false with no results yet, so the hero bar
-  // unmounts and remounts as a fresh instance with empty local state. A plain
-  // setQuery() call from the failing instance's stale closure would target a
-  // component that's already gone. This ref survives the swap; the next
-  // mounted instance (hero or docked, whichever it is) reads and clears it.
+  // Same reason: a rejected first query remounts the search bar.
   const pendingQueryRef = useRef<string | null>(null)
+  // Bumped on "New chat" so the hero search bar remounts empty.
+  const [searchBarKey, setSearchBarKey] = useState(0)
 
   const hasResults = messages.length > 0
-  // True once the streamed answer has actual text, i.e. the stage panel can go away
   const hasStreamedText = Boolean(
     streamingId && messages.find((m) => m.id === streamingId)?.content
   )
@@ -216,8 +202,7 @@ export default function Home() {
     }
   }, [hasResults, isLoading])
 
-  // Follow the answer as it grows, but only while the reader is already at the
-  // bottom — scrolling up to re-read must never be yanked back down.
+  // Auto-scroll only while the reader is at the bottom.
   useEffect(() => {
     if (messages.length === 0 || !isAtBottomRef.current) return
     if (scrollRafRef.current !== null) return
@@ -297,11 +282,12 @@ export default function Home() {
       setMessages([])
       setError(null)
       setCurrentSessionId(null)
+      pendingQueryRef.current = null
+      setSearchBarKey((k) => k + 1)
       setTimeout(() => mainContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" }), 0)
     }
   }
 
-  /** Write the buffered tokens into the streaming message. */
   const applyBuffer = useCallback(() => {
     const buffered = streamBufferRef.current
     if (!buffered) return
@@ -330,12 +316,7 @@ export default function Home() {
     setStreamStage({ subQueries: [], sources: [] })
   }, [])
 
-  /**
-   * Put the question and an empty answer on screen and point the token buffer at
-   * that answer. Called when a query is submitted, and again defensively by every
-   * incoming event: if this has not run, a streamed answer has nowhere to go and
-   * the page would appear frozen on the hero view.
-   */
+  /** Show the question and an empty answer. Every event calls it too, so tokens always have a target. */
   const ensureStreamTarget = useCallback(
     (context: { query: string; isFollowUp: boolean }) => {
       if (streamBufferRef.current) return
@@ -375,7 +356,6 @@ export default function Home() {
     (event: StreamEvent, context: { query: string; isFollowUp: boolean }) => {
       switch (event.type) {
         case "submitted": {
-          // Show the question and an empty answer straight away, then fill it in
           ensureStreamTarget(context)
           break
         }
@@ -401,8 +381,7 @@ export default function Home() {
           ensureStreamTarget(context)
           const buffered = streamBufferRef.current
           if (!buffered) {
-            // Should be unreachable. Never fail silently here again: dropping
-            // tokens is what made the streaming regression invisible.
+            // Unreachable; logged because silently dropped tokens once hid a regression.
             console.warn("Dropped a streamed token: no target message", event)
             break
           }
@@ -449,8 +428,6 @@ export default function Home() {
         }
 
         case "not_saved": {
-          // The answer is correct and on screen; only persistence failed. Say
-          // so plainly rather than letting it disappear on the next reload.
           setNotice(
             "This answer finished but wasn't saved to your history, so it won't be here after a reload. " +
             "That usually means you already have a saved session for this exact query."
@@ -475,7 +452,6 @@ export default function Home() {
   )
 
   const handleResultsUpdate = (newResult: ResearchResult & { streamed?: boolean }) => {
-    // A streamed answer is already on screen; only the session needs updating.
     if (newResult.streamed) {
       if (newResult.session_id) setCurrentSessionId(newResult.session_id)
       return
@@ -538,8 +514,7 @@ export default function Home() {
           ${hasResults || isLoading ? "overflow-y-auto pb-32" : "overflow-hidden pb-0"}
         `}
       >
-        {/* HERO SECTION - only while there is nothing to show and nothing loading,
-            so a submit or a history click always produces visible feedback */}
+        {/* Hidden while loading so a submit or history click always shows feedback. */}
         {!hasResults && !isLoading && (
           <div className="min-h-screen flex flex-col justify-center items-center px-4">
             <header className="text-center mb-12">
@@ -553,6 +528,7 @@ export default function Home() {
 
             <div className="w-full max-w-[850px] space-y-10">
               <StickySearchBar
+                key={searchBarKey}
                 onResultsUpdate={handleResultsUpdate}
                 isLoading={isLoading}
                 setIsLoading={setIsLoading}
@@ -599,7 +575,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* CONVERSATION VIEW - No hero, content starts immediately */}
         {(hasResults || isLoading) && (
           <div className="max-w-5xl mx-auto px-8 pt-8">
             <ActiveChatHeader title={activeQuery} isVisible={hasResults} />
@@ -676,8 +651,7 @@ export default function Home() {
               </Card>
             )}
 
-            {/* The list stays mounted while an answer streams; it is only hidden
-                while a saved session is being loaded. */}
+            {/* Stays mounted while streaming; hidden only while a saved session loads. */}
             {!(isLoading && !isStreaming) && (
               <div className="pb-8 space-y-8">
                 {messages.map((message, index) => (

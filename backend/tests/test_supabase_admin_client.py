@@ -1,17 +1,8 @@
 """
-get_admin_client() lazy-singleton tests.
-
-Same shape as test_rate_limit.py — no pytest dependency, run it directly:
+get_admin_client() tests: a failed init must not be cached (or account deletion stays
+503 until restart), a successful one must be.
 
     python tests/test_supabase_admin_client.py
-
-get_admin_client() is a process-lifetime singleton (backend/database/
-supabase_admin_client.py). The one behavior worth pinning down: a FAILED
-initialization must NOT be cached, or the account-deletion endpoint gets
-permanently wedged at 503 for the life of the worker process after any single
-init hiccup (missing env var at boot, create_client() raising transiently),
-with no way to recover short of a full restart. A SUCCESSFUL initialization
-must still be cached, so we don't rebuild the client on every call.
 """
 import os
 import sys
@@ -30,7 +21,6 @@ def check(label, cond, detail=""):
 
 
 def reset():
-    """Process-lifetime globals must be reset explicitly between cases."""
     admin_mod._admin_client = None
     admin_mod._admin_client_initialized = False
 

@@ -1,9 +1,6 @@
 """
-Service-role Supabase client, used only for admin operations (e.g. deleting a user)
-that the anon-key client used elsewhere in this app cannot perform.
-
-Kept deliberately separate from VettanDatabaseV2 so the anon-key client used for all
-normal research/history traffic can never be confused with this elevated-privilege one.
+Service-role Supabase client for admin operations. Kept separate from VettanDatabaseV2
+so it can't be mistaken for the anon client used for user traffic.
 """
 
 from supabase import create_client, Client
@@ -22,14 +19,8 @@ _admin_client_initialized: bool = False
 
 def get_admin_client() -> Optional[Client]:
     """
-    Get a service-role Supabase client with lazy initialization.
-    Returns None if SUPABASE_SERVICE_ROLE_KEY is not configured (graceful degradation).
-
-    A failed attempt (missing config, or create_client() raising) is NOT cached:
-    the next call retries from scratch. Only a successful client is memoized for
-    the life of the process. create_client() does no network I/O — it only
-    validates the URL/key shape and builds local sub-clients — so retrying on
-    every call while misconfigured/down costs nothing and needs no backoff.
+    Service-role client, or None if not configured. Only success is cached, so a bad
+    start recovers on the next call; create_client() does no network I/O.
     """
     global _admin_client, _admin_client_initialized
 

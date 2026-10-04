@@ -1,8 +1,5 @@
 
-"""
-OpenAI TTS with full-length audio support via intelligent chunking
-Handles reports up to 15,000 characters (~10 minutes audio)
-"""
+"""OpenAI TTS, chunking text longer than one request allows (up to 15,000 chars)."""
 
 from openai import OpenAI
 import os
@@ -14,7 +11,6 @@ load_dotenv()
 
 
 class VettanTTS:
-    """Text-to-Speech with support for long reports"""
     
     VOICES = {
         'nova': 'Female, warm, friendly',
@@ -27,9 +23,8 @@ class VettanTTS:
     
     DEFAULT_VOICE = "nova"
     
-    # OpenAI TTS limits
     MAX_CHARS_PER_REQUEST = 4096  # OpenAI's hard limit
-    SAFE_CHUNK_SIZE = 3900  # Leave buffer for safety
+    SAFE_CHUNK_SIZE = 3900
     RECOMMENDED_MAX = 15000  # ~10 min audio
     
     def __init__(self):
@@ -46,10 +41,7 @@ class VettanTTS:
         voice: str = DEFAULT_VOICE,
         model: str = "tts-1"
     ) -> Optional[bytes]:
-        """
-        Generate audio for text up to 15,000 chars, chunking and
-        concatenating automatically if it exceeds a single TTS request.
-        """
+        """Generate audio, chunking and concatenating past one request's limit."""
         try:
             original_length = len(text)
 
@@ -85,7 +77,6 @@ class VettanTTS:
         return audio_bytes if audio_bytes and len(audio_bytes) > 1000 else None
     
     def _generate_chunked(self, text: str, voice: str, model: str) -> Optional[bytes]:
-        # Split into safe-sized chunks at paragraph boundaries
         chunks = self._smart_chunk(text, max_size=self.SAFE_CHUNK_SIZE)
 
         print(f"📦 Split into {len(chunks)} chunks for generation")
@@ -124,14 +115,7 @@ class VettanTTS:
         return combined_audio
     
     def _smart_chunk(self, text: str, max_size: int) -> List[str]:
-        """
-        Split text at natural boundaries (paragraphs, sentences)
-        
-        Strategy:
-        1. Split by double newlines (paragraphs)
-        2. If paragraph too long, split by sentences
-        3. Keep chunks under max_size
-        """
+        """Split on paragraphs, then sentences when a paragraph is too long."""
         chunks: List[str] = []
         current_chunk = ""
 
@@ -167,10 +151,9 @@ class VettanTTS:
         return chunks
     
     def prepare_text_for_speech(self, markdown_text: str) -> str:
-        """Clean markdown for natural speech (NO LENGTH LIMIT)"""
+        """Strip markdown so it reads naturally. Doesn't truncate."""
         text = markdown_text
         
-        # Remove markdown formatting
         text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
         text = re.sub(r'\*\*([^\*]+)\*\*', r'\1', text)
@@ -180,7 +163,7 @@ class VettanTTS:
         text = re.sub(r'```[^`]*```', '', text)
         text = re.sub(r'`([^`]+)`', r'\1', text)
 
-        # Clean whitespace but preserve paragraph breaks
+        # Keep paragraph breaks; chunking splits on them.
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = re.sub(r'[ \t]+', ' ', text)
 

@@ -49,7 +49,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
 
       const data = await response.json()
 
-      // Refresh the sidebar history so the new session shows up immediately
       refreshHistory()
 
       setSourceCount(data.citations?.length || 0)
@@ -165,7 +164,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
       }
     }
 
-    // CRITICAL: Start listening immediately when component mounts with isOpen=true
     if (!isInitializedRef.current) {
       isInitializedRef.current = true
       
@@ -206,7 +204,7 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     }
   }, [isOpen])
 
-  // Mic button acts as MUTE/UNMUTE toggle
+  // The mic button toggles mute.
   const toggleListening = () => {
     if (!recognitionRef.current) {
       alert('Speech recognition not supported. Use Chrome, Edge, or Safari.')
@@ -214,7 +212,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
     }
 
     if (state === 'listening') {
-      // MUTE: Stop listening
       try {
         recognitionRef.current.stop()
         setState('idle')
@@ -223,7 +220,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
         console.error('Failed to stop:', e)
       }
     } else if (state === 'idle') {
-      // UNMUTE: Resume listening
       try {
         recognitionRef.current.start()
         setState('listening')
@@ -280,7 +276,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
         particle.x += particle.vx
         particle.y += particle.vy
 
-        // Gravitational pull toward center
         const dx = centerX - particle.x
         const dy = centerY - particle.y
         const distance = Math.sqrt(dx * dx + dy * dy)
@@ -338,7 +333,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex items-center justify-center animate-in fade-in duration-300">
-      {/* Animated particle orb */}
       <div className="relative">
         <canvas
           ref={canvasRef}
@@ -348,7 +342,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
         />
       </div>
 
-      {/* Status text */}
       <div className="absolute bottom-32 left-1/2 -translate-x-1/2 text-center">
         <p className="text-teal-400 text-lg mb-8 animate-in fade-in duration-500">
           {state === 'idle' && (micPermissionDenied ? 'Microphone access denied' : 'Initializing...')}
@@ -357,9 +350,7 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
           {state === 'speaking' && 'Speaking...'}
         </p>
 
-        {/* Control buttons */}
         <div className="flex items-center justify-center gap-4">
-          {/* Close button */}
           <button
             onClick={onClose}
             className="w-14 h-14 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center transition-all duration-200 active:scale-95"
@@ -368,7 +359,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
             <X className="w-6 h-6 text-neutral-300" />
           </button>
 
-          {/* Mic toggle button - Shows current state and allows mute/unmute */}
           <button
             onClick={toggleListening}
             disabled={state === 'processing' || state === 'speaking' || micPermissionDenied}
@@ -383,21 +373,18 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
             `}
             aria-label={state === 'listening' ? "Mute microphone" : "Unmute microphone"}
           >
-            {/* Show Mic icon when listening (active), MicOff when muted */}
             {state === 'listening' ? (
               <Mic className="w-6 h-6" />
             ) : (
               <MicOff className="w-6 h-6" />
             )}
             
-            {/* Pulsing ring when actively listening */}
             {state === 'listening' && (
               <span className="absolute inset-0 rounded-full border-2 border-purple-400 animate-ping opacity-75"></span>
             )}
           </button>
         </div>
 
-        {/* Permission hint */}
         {state === 'idle' && !micPermissionDenied && (
           <p className="text-neutral-500 text-sm mt-4 animate-in fade-in duration-700">
             Click the microphone to start
@@ -405,7 +392,6 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
         )}
       </div>
 
-      {/* Live transcript display */}
       {transcript && state === 'listening' && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 max-w-2xl px-6 py-3 bg-neutral-900/90 rounded-lg backdrop-blur-sm border border-neutral-700 animate-in fade-in duration-200">
           <p className="text-neutral-300 text-sm italic">&ldquo;{transcript}&rdquo;</p>

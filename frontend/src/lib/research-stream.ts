@@ -10,10 +10,7 @@ export interface ResearchPayload {
   is_followup?: boolean
 }
 
-/**
- * Events the UI reacts to. "submitted" and "aborted" are raised on the client
- * (the server never sends them); the rest arrive as SSE frames.
- */
+/** "submitted" and "aborted" are client-side; the rest are SSE frames. */
 export type StreamEvent =
   | { type: "submitted" }
   | { type: "aborted" }
@@ -27,7 +24,7 @@ export type StreamEvent =
       session_id: string
       citations: any[]
       metadata: any
-      // Present on a real stream; absent when the blocking endpoint stands in.
+      // Absent when the non-streaming endpoint was used as a fallback.
       user_message_id?: string
       user_created_at?: string
       assistant_message_id?: string
@@ -55,16 +52,11 @@ function parseFrame(frame: string): StreamEvent | null {
   }
 }
 
-/**
- * Calls /api/research/stream and yields each server-sent event as it arrives.
- * Pass an AbortSignal to stop the answer early; the server then saves nothing.
- */
+/** Yields events from /api/research/stream. Aborting stops the answer and nothing is saved. */
 export async function* streamResearch(
   payload: ResearchPayload,
   signal?: AbortSignal
 ): AsyncGenerator<StreamEvent> {
-  // authFetch, not fetch: the backend scopes the session to the caller, and a
-  // follow-up's session_id is only honoured if this user owns it.
   const response = await authFetch(`${API_URL}/api/research/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -72,9 +64,7 @@ export async function* streamResearch(
     signal
   })
 
-  // A 429 has already been turned into a RateLimitedError by authFetch and
-  // never reaches here. Anything else keeps its status, so a caller deciding
-  // whether to retry does not have to parse the message.
+  // 429s were already thrown by authFetch. Keep the status for callers deciding on a retry.
   if (!response.ok || !response.body) {
     const error = new Error(`Stream request failed (${response.status})`) as Error & {
       status?: number
@@ -92,7 +82,7 @@ export async function* streamResearch(
       const { done, value } = await reader.read()
       if (done) break
 
-      // A chunk can split a frame in half, so keep the remainder in the buffer
+      // A chunk can end mid-frame.
       buffer += decoder.decode(value, { stream: true })
 
       let boundary = buffer.indexOf("\n\n")
