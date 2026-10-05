@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Volume2, Download, Loader2, Play, Pause, RotateCcw, Sparkles, X } from "lucide-react"
-import { authPost, API_BASE_URL, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
+import { authPost, API_BASE_URL, ContentBlockedError, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
 import { useToast } from "@/hooks/use-toast"
 
 const API_URL = API_BASE_URL
@@ -104,7 +104,9 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
       setCost(response.cost ?? 0)
       
     } catch (error) {
-      if (error instanceof RateLimitedError) {
+      if (error instanceof ContentBlockedError) {
+        toast({ title: "Can't read this aloud", description: error.message, variant: "destructive" })
+      } else if (error instanceof RateLimitedError) {
         toast({
           title: error.limit ? limitTitle(error, "Audio") : "Audio limit reached",
           description: error.message,

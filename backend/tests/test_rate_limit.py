@@ -29,6 +29,8 @@ os.environ["RATE_LIMIT_RESEARCH_REFILL_PER_MIN"] = "1"
 os.environ["RATE_LIMIT_IP_CAPACITY"] = "100000"
 # No service-role key, so the spend guard would fail closed. See test_spend_guard.py.
 os.environ["SPEND_GUARD_ENABLED"] = "false"
+# The fake OpenAI key would otherwise send a real moderation call. See test_moderation.py.
+os.environ["MODERATION_ENABLED"] = "false"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

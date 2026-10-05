@@ -47,7 +47,7 @@ from utils.rate_limit import (
     InMemoryTokenBucketStore,
 )
 from utils.rate_limit_http import RateLimitMiddleware, rate_limited, warn_if_multiprocess
-from utils import spend_guard
+from utils import moderation, spend_guard
 
 # In-process buckets: correct only while this runs as a single worker.
 _rate_limit_store = InMemoryTokenBucketStore()
@@ -117,6 +117,7 @@ app.add_middleware(
         "X-RateLimit-Remaining",
         "X-RateLimit-Reset",
         spend_guard.MARKER_HEADER,
+        moderation.MARKER_HEADER,
     ],
 )
 
@@ -465,6 +466,11 @@ async def research(
         request_started = time.perf_counter()
         request_started_iso = _now_iso()
 
+        # Before the cache and the charge: nothing paid runs on a flagged query.
+        verdict = await moderation.check(request.query, "input", user.id)
+        if verdict.flagged:
+            raise moderation.blocked("input", verdict)
+
         logger.info("="*60)
         logger.info(f"REQUEST: {request.query[:80]}")
         logger.info(f"Session: {request.session_id[:8] if request.session_id else 'NEW'}")
@@ -508,6 +514,11 @@ async def research(
 
             ai_content = result['output']
             citations = result.get('citations', [])
+
+            verdict = await moderation.check(ai_content, "output", user.id)
+            if verdict.flagged:
+                raise moderation.blocked("output", verdict)
+
             metadata = result.get('metadata', {})
 
             assistant_msg = _new_message(
@@ -567,6 +578,9 @@ async def research(
                 _spend_store, user.id, "research", spend_guard.cost_usd("research")
             )
             result = await research_complete(request.query)
+            verdict = await moderation.check(result.get('output', ''), "output", user.id)
+            if verdict.flagged:
+                raise moderation.blocked("output", verdict)
             session_id = str(uuid.uuid4())
         else:
             session_id = result.get('metadata', {}).get('session_id')
@@ -643,6 +657,7 @@ async def research_stream_endpoint(
         token   {text}
         done    {session_id, user_message_id, assistant_message_id, citations, metadata}
         error   {message}
+        blocked {message}   answer withheld by moderation; drop what was streamed
     """
     db = _db_for(user)
     _require_schema(db)
@@ -655,10 +670,17 @@ async def research_stream_endpoint(
     logger.info(f"Session: {request.session_id[:8] if request.session_id else 'NEW'} | Follow-up: {is_followup}")
     logger.info("=" * 60)
 
+    # Moderation goes first: a flagged query gets no slot, no charge and no search.
     # Before the charge: a cached answer is free, even for a user at their limit.
-    cached = None
+    moderated = moderation.check(request.query, "input", user.id)
     if not is_followup and request.use_cache:
-        cached = await _cached_session(db, request.query, user.id)
+        verdict, cached = await asyncio.gather(
+            moderated, _cached_session(db, request.query, user.id)
+        )
+    else:
+        verdict, cached = await moderated, None
+    if verdict.flagged:
+        raise moderation.blocked("input", verdict)
 
     # Not a yield dependency: its teardown runs before the stream starts.
     if not _research_slots.try_acquire(user.id):
@@ -716,6 +738,12 @@ async def research_stream_endpoint(
 
                 if not final:
                     yield _sse("error", {"message": "No response generated"})
+                    return
+
+                verdict = await moderation.check(final["output"], "output", user.id)
+                if verdict.flagged:
+                    # Not "error": the frontend retries errors on /api/research, paying again.
+                    yield _sse("blocked", {"message": moderation.message("output", verdict)})
                     return
 
                 metadata = {**final["metadata"], "is_followup": True}
@@ -783,6 +811,11 @@ async def research_stream_endpoint(
 
             if not final:
                 yield _sse("error", {"message": "No response generated"})
+                return
+
+            verdict = await moderation.check(final["output"], "output", user.id)
+            if verdict.flagged:
+                yield _sse("blocked", {"message": moderation.message("output", verdict)})
                 return
 
             output = final["output"]
@@ -905,6 +938,11 @@ async def generate_audio(
         
         tts = get_tts()
         speech_text = tts.prepare_text_for_speech(request.text)
+
+        # The client sends this text, so it isn't necessarily an answer we generated.
+        verdict = await moderation.check(speech_text, "audio", user.id)
+        if verdict.flagged:
+            raise moderation.blocked("audio", verdict)
 
         # Long text costs several calls. Charge the extra to the bucket without gating,
         # so the next request is the one that gets limited.

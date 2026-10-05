@@ -76,6 +76,9 @@ jobs:
       - name: Spend guard tests
         run: python tests/test_spend_guard.py
 
+      - name: Moderation tests
+        run: python tests/test_moderation.py
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

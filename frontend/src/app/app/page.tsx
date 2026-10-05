@@ -427,6 +427,18 @@ export default function Home() {
           break
         }
 
+        case "blocked": {
+          // Unlike "error", drop the answer even if some of it already streamed.
+          const buffered = streamBufferRef.current
+          flushStream()
+          if (buffered) {
+            setMessages((prev) => prev.filter((m) => m.id !== buffered.id))
+          }
+          setError(event.message)
+          endStream()
+          break
+        }
+
         case "not_saved": {
           setNotice(
             "This answer finished but wasn't saved to your history, so it won't be here after a reload. " +

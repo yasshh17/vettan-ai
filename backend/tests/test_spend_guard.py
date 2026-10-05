@@ -14,6 +14,8 @@ os.environ.setdefault("TAVILY_API_KEY", "test")
 # Keep the token buckets out of the way.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["SPEND_GUARD_ENABLED"] = "true"
+# The fake OpenAI key would otherwise send a real moderation call. See test_moderation.py.
+os.environ["MODERATION_ENABLED"] = "false"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

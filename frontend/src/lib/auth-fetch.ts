@@ -43,6 +43,18 @@ export class CapacityError extends RateLimitedError {
   }
 }
 
+/** Moderation refusal. Not retryable; `message` is the backend's detail and is safe to show as-is. */
+export class ContentBlockedError extends Error {
+  /** "input", "output" or "audio", or "unavailable" when the check itself is down. */
+  readonly source: string
+
+  constructor(message: string, source: string) {
+    super(message)
+    this.name = "ContentBlockedError"
+    this.source = source
+  }
+}
+
 export function limitTitle(error: RateLimitedError, feature = "Research"): string {
   if (error.limit === "user") return "Daily limit reached"
   if (error.limit) return `${feature} unavailable`
@@ -50,6 +62,20 @@ export function limitTitle(error: RateLimitedError, feature = "Research"): strin
 }
 
 const SPEND_LIMIT_HEADER = "x-spend-limit"
+const CONTENT_BLOCKED_HEADER = "x-content-blocked"
+
+// 400 when flagged, 503 when the check is down and the backend fails closed.
+function blockedError(
+  status: number | undefined,
+  detail: string | undefined,
+  blocked: string | null | undefined
+): ContentBlockedError | null {
+  if (!blocked || (status !== 400 && status !== 503)) return null
+  return new ContentBlockedError(
+    detail || "This request can't be processed because it may violate our usage policy.",
+    blocked
+  )
+}
 
 // A 503 counts only with X-Spend-Limit; other 503s belong to their callers.
 function refusalError(
@@ -79,11 +105,16 @@ function parseRetryAfter(raw: string | null | undefined): number {
   return Math.min(Math.max(seconds, 1), 3600)
 }
 
-/** Convert a 429 or spend-guard 503 into a RateLimitedError; pass anything else through. */
-function asRateLimitError(error: unknown): unknown {
+/** Convert a refusal into RateLimitedError or ContentBlockedError; pass anything else through. */
+function asRefusalError(error: unknown): unknown {
   if (!axios.isAxiosError(error) || !error.response) return error
   const detail = (error.response.data as { detail?: string } | undefined)?.detail
   return (
+    blockedError(
+      error.response.status,
+      typeof detail === "string" ? detail : undefined,
+      error.response.headers?.[CONTENT_BLOCKED_HEADER] as string | undefined
+    ) ??
     refusalError(
       error.response.status,
       typeof detail === "string" ? detail : undefined,
@@ -155,7 +186,7 @@ async function request<T>(
             : await axios.patch<T>(url, body, merged)
     return res.data
   } catch (error) {
-    throw asRateLimitError(error)
+    throw asRefusalError(error)
   }
 }
 
@@ -196,6 +227,11 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
   if (res.status === 401) {
     redirectToSignIn()
     throw new UnauthenticatedError("Session expired")
+  }
+  const blocked = res.headers.get(CONTENT_BLOCKED_HEADER)
+  if (blocked && (res.status === 400 || res.status === 503)) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null
+    throw blockedError(res.status, body?.detail, blocked)
   }
   if (res.status === 429 || (res.status === 503 && res.headers.get(SPEND_LIMIT_HEADER))) {
     // Safe to read the body: this branch always throws.
