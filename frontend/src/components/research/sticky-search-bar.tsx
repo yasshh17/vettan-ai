@@ -31,6 +31,12 @@ interface StickySearchBarProps {
    * remounts the hero bar, so setQuery() on the old instance would be lost.
    */
   pendingQueryRef?: React.MutableRefObject<string | null>
+  /**
+   * A rejected query re-delivered by the page to whichever instance is mounted now: a
+   * first query's hero bar is replaced by the docked bar before the refusal arrives.
+   */
+  restoredQuery?: { text: string; id: number } | null
+  onRestoreQuery?: (text: string) => void
 }
 
 export function StickySearchBar({
@@ -42,7 +48,9 @@ export function StickySearchBar({
   currentSessionId,
   onStreamEvent,
   abortRef,
-  pendingQueryRef
+  pendingQueryRef,
+  restoredQuery,
+  onRestoreQuery
 }: StickySearchBarProps) {
   const { toast } = useToast()
   // Read only; clearing here would break under StrictMode's double-invoked initializer.
@@ -62,6 +70,18 @@ export function StickySearchBar({
     if (pendingQueryRef) pendingQueryRef.current = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (restoredQuery) setQuery(restoredQuery.text)
+  }, [restoredQuery])
+
+  // Puts a rejected query back so it can be edited and resent.
+  const restoreQuery = (text: string, isFollowUp: boolean) => {
+    setQuery(text)
+    // Only a first query remounts; follow-ups keep this instance.
+    if (!isFollowUp && pendingQueryRef) pendingQueryRef.current = text
+    onRestoreQuery?.(text)
+  }
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -177,15 +197,12 @@ export function StickySearchBar({
       } else if (err instanceof ContentBlockedError) {
         // No fallback: /api/research would refuse it too, after paying for the answer again.
         onStreamEvent?.({ type: "blocked", message: err.message }, context)
-        setQuery(submitted)
-        if (!isFollowUp && pendingQueryRef) pendingQueryRef.current = submitted
+        restoreQuery(submitted, isFollowUp)
       } else if (err instanceof RateLimitedError) {
         // No fallback to /api/research: same bucket, and it would spend a second request.
         onStreamEvent?.({ type: "error", message: err.message }, context)
         toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
-        setQuery(submitted)
-        // Only a first query remounts; follow-ups keep this instance.
-        if (!isFollowUp && pendingQueryRef) pendingQueryRef.current = submitted
+        restoreQuery(submitted, isFollowUp)
       } else {
         console.error("Streaming failed, falling back to /api/research:", err)
         await runWithoutStreaming(payload, context, err)
@@ -223,13 +240,11 @@ export function StickySearchBar({
       // A refusal is the clearer message; otherwise report the original stream error.
       if (err instanceof ContentBlockedError) {
         onStreamEvent?.({ type: "blocked", message: err.message }, context)
-        setQuery(context.query)
-        if (!context.isFollowUp && pendingQueryRef) pendingQueryRef.current = context.query
+        restoreQuery(context.query, context.isFollowUp)
       } else if (err instanceof RateLimitedError) {
         onStreamEvent?.({ type: "error", message: err.message }, context)
         toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
-        setQuery(context.query)
-        if (!context.isFollowUp && pendingQueryRef) pendingQueryRef.current = context.query
+        restoreQuery(context.query, context.isFollowUp)
       } else {
         const message =
           streamError instanceof Error && streamError.message

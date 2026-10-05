@@ -20,7 +20,7 @@ import asyncio  # noqa: E402
 import json  # noqa: E402
 
 from utils import moderation, spend_guard  # noqa: E402
-from utils.moderation import Verdict  # noqa: E402
+from utils.moderation import Scores, Verdict  # noqa: E402
 from utils.spend_guard import InMemorySpendStore  # noqa: E402
 
 failures = []
@@ -37,18 +37,28 @@ def run(coro):
 
 
 ALICE = "11111111-1111-1111-1111-111111111111"
-BAD = "BAD"  # any text containing this is flagged by the fake
+BAD = "BAD"  # a request to cause harm; blocked as a question and as generated text
 
 moderated = []
+
+# Scores modeled on live omni-moderation results (see utils/moderation.py).
+_FAKE = {
+    BAD: Scores(frozenset({"violence", "illicit/violent"}), {"violence": 0.94, "illicit/violent": 0.91}),
+    # Factual research about atrocities: flagged by OpenAI, but legitimate.
+    "HISTORY": Scores(frozenset({"violence"}), {"violence": 0.43}),
+    # How scams work, for defense: flagged by OpenAI, but legitimate.
+    "SCAMS": Scores(frozenset({"illicit"}), {"illicit": 0.84}),
+    "SCAM_REQUEST": Scores(frozenset({"illicit"}), {"illicit": 0.95}),
+    "HURT": Scores(frozenset({"self-harm", "self-harm/intent"}), {"self-harm": 0.98, "self-harm/intent": 1.0}),
+}
 
 
 async def _fake_moderate(text):
     moderated.append(text)
-    if BAD in text:
-        return Verdict(True, ["violence"])
-    if "HURT" in text:
-        return Verdict(True, ["self-harm", "self-harm/intent"])
-    return Verdict(False)
+    for marker in ("SCAM_REQUEST", BAD, "HISTORY", "SCAMS", "HURT"):
+        if marker in text:
+            return _FAKE[marker]
+    return Scores(frozenset(), {})
 
 
 async def _down(text):
@@ -57,7 +67,7 @@ async def _down(text):
 
 async def _slow(text):
     await asyncio.sleep(1)
-    return Verdict(False)
+    return Scores(frozenset(), {})
 
 
 moderation._moderate = _fake_moderate
@@ -67,7 +77,19 @@ print("\n[1] check()")
 
 check("clean text passes", run(moderation.check("hello", "input")) == Verdict(False))
 v = run(moderation.check(f"{BAD} query", "input"))
-check("flagged text is flagged, with categories", v.flagged and v.categories == ["violence"])
+check(f"a request to cause harm is blocked, with the categories that hit -> {v.categories}",
+      v.flagged and v.categories == ["illicit/violent", "violence"])
+# REGRESSIONS: in production "How were people executed in medieval Europe?" (violence 0.43)
+# and a factual answer about the Rwandan genocide were refused.
+check("a history question about violence is allowed", not run(moderation.check("HISTORY q", "input")).flagged)
+check("a question on how scams work is allowed", not run(moderation.check("SCAMS q", "input")).flagged)
+check("a request to run a scam is blocked", run(moderation.check("SCAM_REQUEST q", "input")).flagged)
+check("an answer describing violence is allowed", not run(moderation.check("HISTORY a", "output")).flagged)
+check("audio text describing violence is allowed", not run(moderation.check("HISTORY a", "audio")).flagged)
+check("an answer with weapon instructions is blocked", run(moderation.check(f"{BAD} a", "output")).flagged)
+check("audio text with weapon instructions is blocked", run(moderation.check(f"{BAD} a", "audio")).flagged)
+v = run(moderation.check("HURT", "input"))
+check(f"personal self-harm intent is blocked -> {v.categories}", v.flagged and "self-harm/intent" in v.categories)
 
 moderated.clear()
 check("blank text skips the call", run(moderation.check("   ", "input")) == Verdict(False) and not moderated)
@@ -216,9 +238,20 @@ r = client.post("/api/research/stream", json={"query": "HURT"})
 check("stream: self-harm query gets the helpline message", "findahelpline.com" in r.json()["detail"])
 
 store = reset()
+r = client.post("/api/research/stream", json={"query": "HISTORY How were people executed in medieval Europe?"})
+check(f"stream: a history question about violence is researched -> {events(r.text)}",
+      r.status_code == 200 and events(r.text)[-1] == "done" and calls["research"] == 1)
+
+store = reset()
 r = client.post("/api/research/stream", json={"query": "fine query"})
 check(f"stream: clean query streams to done -> {events(r.text)}",
       r.status_code == 200 and events(r.text)[-1] == "done" and calls["persisted"] == 1)
+
+store = reset()
+answer["text"] = "HISTORY answer " * 20
+r = client.post("/api/research/stream", json={"query": "fine query"})
+check(f"stream: answer describing violence still completes and is saved -> {events(r.text)}",
+      events(r.text)[-1] == "done" and calls["persisted"] == 1)
 
 store = reset()
 answer["text"] = f"{BAD} answer " * 20
@@ -262,6 +295,11 @@ check(f"/api/research: flagged answer -> 400 marked output -> {r.status_code}",
 store = reset()
 r = client.post("/api/research", json={"query": "fine query"})
 check(f"/api/research: clean query -> 200 -> {r.status_code}", r.status_code == 200)
+
+store = reset()
+r = client.post("/api/audio", json={"text": "HISTORY text"})
+check(f"/api/audio: text describing violence is read aloud -> {r.status_code}",
+      r.status_code == 200 and calls["tts"] == 1)
 
 store = reset()
 r = client.post("/api/audio", json={"text": f"{BAD} text"})

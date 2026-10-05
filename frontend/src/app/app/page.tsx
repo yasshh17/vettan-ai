@@ -170,6 +170,12 @@ export default function Home() {
   const streamAbortRef = useRef<AbortController | null>(null)
   // Same reason: a rejected first query remounts the search bar.
   const pendingQueryRef = useRef<string | null>(null)
+  // A refused query, re-delivered to whichever search bar is mounted when the refusal arrives.
+  const [restoredQuery, setRestoredQuery] = useState<{ text: string; id: number } | null>(null)
+  const restoreQuery = useCallback(
+    (text: string) => setRestoredQuery({ text, id: Date.now() }),
+    []
+  )
   // Bumped on "New chat" so the hero search bar remounts empty.
   const [searchBarKey, setSearchBarKey] = useState(0)
 
@@ -243,6 +249,8 @@ export default function Home() {
 
   const handleSelectQuery = (query: string, sessionId?: string) => {
     setActiveQuery(query)
+    // A newly mounted bar would otherwise pick up an earlier refused query.
+    setRestoredQuery(null)
 
     if (sessionId) {
       setIsLoading(true)
@@ -550,6 +558,8 @@ export default function Home() {
                 onStreamEvent={handleStreamEvent}
                 abortRef={streamAbortRef}
                 pendingQueryRef={pendingQueryRef}
+                restoredQuery={restoredQuery}
+                onRestoreQuery={restoreQuery}
               />
 
               <div className="space-y-3 animate-in fade-in duration-700 delay-500">
@@ -712,6 +722,8 @@ export default function Home() {
               onStreamEvent={handleStreamEvent}
               abortRef={streamAbortRef}
               pendingQueryRef={pendingQueryRef}
+              restoredQuery={restoredQuery}
+              onRestoreQuery={restoreQuery}
             />
           </div>
         </div>
