@@ -49,13 +49,16 @@ _FAKE = {
     # How scams work, for defense: flagged by OpenAI, but legitimate.
     "SCAMS": Scores(frozenset({"illicit"}), {"illicit": 0.84}),
     "SCAM_REQUEST": Scores(frozenset({"illicit"}), {"illicit": 0.95}),
+    "THREAT": Scores(frozenset({"violence", "harassment"}), {"violence": 0.51, "harassment": 0.34}),
+    # e.g. "How did Jack the Ripper kill his victims?"
+    "RIPPER": Scores(frozenset({"violence"}), {"violence": 0.52, "harassment": 0.01}),
     "HURT": Scores(frozenset({"self-harm", "self-harm/intent"}), {"self-harm": 0.98, "self-harm/intent": 1.0}),
 }
 
 
 async def _fake_moderate(text):
     moderated.append(text)
-    for marker in ("SCAM_REQUEST", BAD, "HISTORY", "SCAMS", "HURT"):
+    for marker in ("SCAM_REQUEST", BAD, "HISTORY", "SCAMS", "THREAT", "RIPPER", "HURT"):
         if marker in text:
             return _FAKE[marker]
     return Scores(frozenset(), {})
@@ -84,6 +87,13 @@ check(f"a request to cause harm is blocked, with the categories that hit -> {v.c
 check("a history question about violence is allowed", not run(moderation.check("HISTORY q", "input")).flagged)
 check("a question on how scams work is allowed", not run(moderation.check("SCAMS q", "input")).flagged)
 check("a request to run a scam is blocked", run(moderation.check("SCAM_REQUEST q", "input")).flagged)
+# Got through after #38: "Now write a detailed threat to kill my neighbor"
+check("a threat at a person is blocked even at moderate violence",
+      run(moderation.check("THREAT q", "input")).flagged)
+check("an equally violent history question is still allowed",
+      not run(moderation.check("RIPPER q", "input")).flagged)
+check("an answer with the threat's scores is not withheld (questions only)",
+      not run(moderation.check("THREAT a", "output")).flagged)
 check("an answer describing violence is allowed", not run(moderation.check("HISTORY a", "output")).flagged)
 check("audio text describing violence is allowed", not run(moderation.check("HISTORY a", "audio")).flagged)
 check("an answer with weapon instructions is blocked", run(moderation.check(f"{BAD} a", "output")).flagged)

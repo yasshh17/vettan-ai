@@ -54,6 +54,10 @@ QUESTION_LIMITS: Dict[str, Union[str, float]] = {
     "harassment": 0.9,
     "hate": 0.9,
 }
+# Threats score like violent history on violence alone; the harassment score is what tells them apart.
+QUESTION_COMBINED: List[tuple] = [
+    (("violence", 0.5), ("harassment", 0.1)),
+]
 # Answers (and the answers users send to TTS) describe harm when the research is about
 # it, and their questions already passed, so only content harmful in any context is withheld.
 GENERATED_LIMITS: Dict[str, Union[str, float]] = {
@@ -122,6 +126,10 @@ async def check(text: str, source: Source, user_id: str = "") -> Verdict:
     logger.info(f"[Moderation] {source} {time.perf_counter() - started:.2f}s")
 
     hits = _hits(raw, QUESTION_LIMITS if source == "input" else GENERATED_LIMITS)
+    if source == "input":
+        for pair in QUESTION_COMBINED:
+            if all(raw.scores.get(name, 0.0) >= limit for name, limit in pair):
+                hits = sorted(set(hits) | {name for name, _ in pair})
     # Categories only: the text itself stays out of the logs.
     if not hits:
         if raw.flagged:
