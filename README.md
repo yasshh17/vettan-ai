@@ -310,8 +310,7 @@ vettan-ai/
 - **CDN:** Vercel Edge Network (global distribution)
 - **AI Provider:** OpenAI (GPT-4o-mini + TTS)
 - **Search Provider:** Tavily (professional web search API)
-- **Monitoring:** Vercel Analytics (frontend performance)
-- **CI/CD:** GitHub → Auto-deploy to Vercel + Railway
+- **CI/CD:** GitHub → Auto-deploy to Vercel + Render
 
 ---
 
@@ -1051,7 +1050,7 @@ Built with exceptional open-source tools and services:
 
 ### Infrastructure & Deployment
 - [Vercel](https://vercel.com/) - Frontend Hosting & CDN
-- [Railway](https://render.com/) - Backend Hosting 
+- [Render](https://render.com/) - Backend Hosting
 - [Supabase](https://supabase.com) - Database & Authentication
 
 Special thanks to the open-source AI/ML community for advancing the field and making sophisticated research tools accessible.

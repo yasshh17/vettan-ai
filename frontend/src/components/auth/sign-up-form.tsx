@@ -7,6 +7,7 @@ import { Loader2, MailCheck } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
+import { SignUpConsent } from "@/components/legal/legal-links"
 import { validateEmail, validateName, validatePassword } from "@/components/auth/validation"
 
 export function SignUpForm() {
@@ -143,12 +144,9 @@ export function SignUpForm() {
             {loading && <Loader2 className="h-5 w-5 animate-spin" />}
             {loading ? "Creating account…" : "Create account"}
           </button>
+          <SignUpConsent />
         </form>
       </AuthCard>
-
-      <p className="mt-6 text-center text-[13px] leading-relaxed text-[#6B6B78]">
-        By continuing you agree to Vettan&apos;s Terms of Service and Privacy Policy.
-      </p>
     </>
   )
 }

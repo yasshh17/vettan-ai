@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { AuthBackground } from "@/components/auth/auth-background"
+import { LegalLinkRow } from "@/components/legal/legal-links"
 
 interface AuthShellProps {
   mode: "sign-in" | "sign-up" | "forgot-password" | "reset-password"
@@ -43,6 +44,7 @@ export function AuthShell({ mode, title, subtitle, children }: AuthShellProps) {
         </h1>
         <p className="mt-3 text-center text-[16px] text-[#9B9BA8]">{subtitle}</p>
         <div className="mt-10 w-full max-w-[440px]">{children}</div>
+        <LegalLinkRow className="mt-10 justify-center text-[13px]" />
       </main>
     </div>
   )

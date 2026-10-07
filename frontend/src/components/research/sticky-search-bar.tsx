@@ -6,6 +6,7 @@ import { refreshHistory, confirmSessionSaved } from "@/lib/api"
 import { authPost, ContentBlockedError, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
 import { streamResearch, type StreamEvent } from "@/lib/research-stream"
 import { useToast } from "@/hooks/use-toast"
+import { isSupportMessage } from "@/components/research/refusal-banner"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -197,7 +198,8 @@ export function StickySearchBar({
       } else if (err instanceof ContentBlockedError) {
         // No fallback: /api/research would refuse it too, after paying for the answer again.
         onStreamEvent?.({ type: "blocked", message: err.message }, context)
-        restoreQuery(submitted, isFollowUp)
+        // Don't put self-harm messages back in the box.
+        if (!isSupportMessage(err.message)) restoreQuery(submitted, isFollowUp)
       } else if (err instanceof RateLimitedError) {
         // No fallback to /api/research: same bucket, and it would spend a second request.
         onStreamEvent?.({ type: "error", message: err.message }, context)
@@ -240,7 +242,7 @@ export function StickySearchBar({
       // A refusal is the clearer message; otherwise report the original stream error.
       if (err instanceof ContentBlockedError) {
         onStreamEvent?.({ type: "blocked", message: err.message }, context)
-        restoreQuery(context.query, context.isFollowUp)
+        if (!isSupportMessage(err.message)) restoreQuery(context.query, context.isFollowUp)
       } else if (err instanceof RateLimitedError) {
         onStreamEvent?.({ type: "error", message: err.message }, context)
         toast({ title: limitTitle(err), description: err.message, variant: "destructive" })

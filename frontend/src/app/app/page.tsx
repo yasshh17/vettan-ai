@@ -6,6 +6,7 @@ import Sidebar from "@/components/layout/sidebar"
 import { VoiceMode } from "@/components/research/voice-mode"
 import { AudioPlayer } from "@/components/research/audio-player"
 import { StickySearchBar } from "@/components/research/sticky-search-bar"
+import { RefusalBanner } from "@/components/research/refusal-banner"
 import { CollapsibleSources } from "@/components/research/collapsible-sources"
 import { StatsPanel } from "@/components/research/stats-panel"
 import { ActiveChatHeader } from "@/components/research/active-chat-header"
@@ -145,6 +146,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<string | null>(null)
   // The answer is shown but wasn't saved: a warning, not an error.
   const [notice, setNotice] = useState<string | null>(null)
   const [activeQuery, setActiveQuery] = useState<string | null>(null)
@@ -160,6 +162,7 @@ export default function Home() {
   const [streamingId, setStreamingId] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const refusalRef = useRef<HTMLDivElement>(null)
   const mainContainerRef = useRef<HTMLDivElement>(null)
   const streamBufferRef = useRef<{ id: string; text: string } | null>(null)
   const flushTimerRef = useRef<number | null>(null)
@@ -221,6 +224,15 @@ export default function Home() {
     })
   }, [messages])
 
+  // The input box covers the bottom of the list, so center it.
+  useEffect(() => {
+    if (!refusal) return
+    const frame = requestAnimationFrame(() =>
+      refusalRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+    )
+    return () => cancelAnimationFrame(frame)
+  }, [refusal])
+
   useEffect(() => {
     return () => {
       if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current)
@@ -255,6 +267,7 @@ export default function Home() {
     if (sessionId) {
       setIsLoading(true)
       setError(null)
+      setRefusal(null)
       setCurrentSessionId(sessionId)
 
       withAuthRedirect(() => authGet<any>(`${API_URL}/api/history/${sessionId}`))
@@ -289,6 +302,7 @@ export default function Home() {
     } else {
       setMessages([])
       setError(null)
+      setRefusal(null)
       setCurrentSessionId(null)
       pendingQueryRef.current = null
       setSearchBarKey((k) => k + 1)
@@ -351,6 +365,7 @@ export default function Home() {
       setStreamingId(assistantId)
       setStreamStage({ subQueries: [], sources: [] })
       setError(null)
+      setRefusal(null)
       setNotice(null)
       setActiveQuery(context.query)
       setMessages((prev) =>
@@ -442,7 +457,7 @@ export default function Home() {
           if (buffered) {
             setMessages((prev) => prev.filter((m) => m.id !== buffered.id))
           }
-          setError(event.message)
+          setRefusal(event.message)
           endStream()
           break
         }
@@ -508,6 +523,7 @@ export default function Home() {
     }
 
     setError(null)
+    setRefusal(null)
     if (newResult.session_id) setCurrentSessionId(newResult.session_id)
 
     const input = document.querySelector('input[type="text"]') as HTMLInputElement | null
@@ -685,6 +701,11 @@ export default function Home() {
                     isStreaming={message.id === streamingId}
                   />
                 ))}
+                {refusal && (
+                  <div ref={refusalRef}>
+                    <RefusalBanner message={refusal} />
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             )}

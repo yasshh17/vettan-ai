@@ -59,6 +59,31 @@ describe("refused queries", () => {
     expect(authPost).not.toHaveBeenCalled()
   })
 
+  it("does not hand a self-harm message back to resend", async () => {
+    streamResearch.mockImplementation(async function* () {
+      throw new ContentBlockedError("You don't have to face it alone: findahelpline.com.", "input")
+    })
+    const onRestoreQuery = vi.fn()
+    const onStreamEvent = vi.fn()
+    render(
+      <StickySearchBar {...baseProps} onStreamEvent={onStreamEvent} onRestoreQuery={onRestoreQuery} />
+    )
+
+    fireEvent.change(screen.getByLabelText("Enter your research question"), {
+      target: { value: "I want to kill myself" },
+    })
+    fireEvent.click(screen.getByLabelText("Submit research query"))
+
+    await waitFor(() =>
+      expect(onStreamEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "blocked" }),
+        expect.anything()
+      )
+    )
+    expect(onRestoreQuery).not.toHaveBeenCalled()
+    expect((screen.getByLabelText("Enter your research question") as HTMLInputElement).value).toBe("")
+  })
+
   it("fills an already-mounted bar when the page re-delivers the query", () => {
     const { rerender } = render(<StickySearchBar {...baseProps} hasResults restoredQuery={null} />)
     const input = screen.getByLabelText("Enter your research question") as HTMLInputElement
