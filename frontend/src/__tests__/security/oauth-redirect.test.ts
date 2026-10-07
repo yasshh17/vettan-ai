@@ -8,7 +8,9 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     auth: {
       exchangeCodeForSession: vi.fn(async () => ({ error: null })),
+      getUser: vi.fn(async () => ({ data: { user: null } })),
     },
+    from: vi.fn(() => ({ upsert: vi.fn(async () => ({ error: null })) })),
   })),
 }))
 
