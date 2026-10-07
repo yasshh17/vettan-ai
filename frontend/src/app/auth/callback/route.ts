@@ -15,6 +15,13 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const dob = user?.user_metadata?.date_of_birth
+      if (user && typeof dob === "string" && dob) {
+        await supabase.from("profiles").upsert({ user_id: user.id, date_of_birth: dob })
+      }
       return NextResponse.redirect(`${origin}${next}`)
     }
   }
