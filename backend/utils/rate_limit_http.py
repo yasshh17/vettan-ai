@@ -177,8 +177,10 @@ def rate_limited(
     return dependency
 
 
-def warn_if_multiprocess(log: logging.Logger) -> None:
-    """Warn if running with several workers, which silently multiplies every limit."""
+def warn_if_multiprocess(log: logging.Logger, shared_store: bool) -> None:
+    """Warn if several workers use in-memory buckets, which silently multiplies every limit."""
+    if shared_store:
+        return
     try:
         concurrency = int(os.getenv("WEB_CONCURRENCY", "1"))
     except (TypeError, ValueError):
@@ -192,8 +194,7 @@ def warn_if_multiprocess(log: logging.Logger) -> None:
             "Rate limiting uses an in-process store, but this app appears to be running "
             "with multiple workers (WEB_CONCURRENCY=%s, argv=%r). Each worker keeps its "
             "own buckets, so the effective limits are multiplied by the worker count. "
-            "Run a single worker, or implement a shared RateLimitStore (Redis) before "
-            "scaling out.",
+            "Run a single worker, or set REDIS_URL before scaling out.",
             concurrency,
             argv,
         )

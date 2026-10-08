@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Lets the rate limiter tests run without a Redis server.
+fakeredis[lua]==2.39.0
