@@ -13,7 +13,7 @@ export const refreshHistory = () =>
   mutate((key) => Array.isArray(key) && key[0] === HISTORY_URL)
 
 /**
- * Whether the session reached the user's history. /api/history waits for pending saves,
+ * Whether the session reached the user's history. The backend saves before it responds,
  * so absent means not saved. Returns true on errors rather than report a false loss.
  */
 export async function confirmSessionSaved(sessionId: string): Promise<boolean> {

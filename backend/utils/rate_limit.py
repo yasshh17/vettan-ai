@@ -10,14 +10,16 @@ bucket after auth protects OpenAI/Tavily spend.
 """
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import math
 import os
 import threading
 import time
+import uuid
 from dataclasses import dataclass
-from typing import Callable, Dict, Mapping, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +90,33 @@ class Decision:
 
 
 class RateLimitStore(Protocol):
-    # Async so a Redis-backed store can implement it.
 
     async def consume(self, key: str, policy: BucketPolicy, cost: float = 1.0) -> Decision:
         ...
+
+
+def _decision(policy: BucketPolicy, allowed: bool, tokens: float, cost: float) -> Decision:
+    """`tokens` is what's left after charging."""
+    deficit = max(0.0, cost - tokens)
+    return Decision(
+        allowed=allowed,
+        policy=policy.name,
+        limit=int(policy.capacity),
+        remaining=int(tokens + _EPSILON),
+        reset_seconds=max(0, math.ceil((policy.capacity - tokens - _EPSILON) / policy.refill_per_sec)),
+        retry_after=0 if allowed else max(1, math.ceil(deficit / policy.refill_per_sec)),
+    )
+
+
+def _open_decision(policy: BucketPolicy) -> Decision:
+    return Decision(
+        allowed=True,
+        policy=policy.name,
+        limit=int(policy.capacity),
+        remaining=int(policy.capacity),
+        reset_seconds=0,
+        retry_after=0,
+    )
 
 
 # Sweep cadence, whichever comes first.
@@ -122,14 +147,7 @@ class InMemoryTokenBucketStore:
     async def consume(self, key: str, policy: BucketPolicy, cost: float = 1.0) -> Decision:
         """Charge `cost` to `key`. Must not await: having no suspension point is what makes it atomic."""
         if not ENABLED:
-            return Decision(
-                allowed=True,
-                policy=policy.name,
-                limit=int(policy.capacity),
-                remaining=int(policy.capacity),
-                reset_seconds=0,
-                retry_after=0,
-            )
+            return _open_decision(policy)
 
         now = self._clock()
 
@@ -150,15 +168,7 @@ class InMemoryTokenBucketStore:
             self._state[key] = (tokens, now, policy.seconds_to_full)
             self._maybe_sweep(now)
 
-        deficit = max(0.0, cost - tokens)
-        return Decision(
-            allowed=allowed,
-            policy=policy.name,
-            limit=int(policy.capacity),
-            remaining=int(tokens + _EPSILON),
-            reset_seconds=max(0, math.ceil((policy.capacity - tokens - _EPSILON) / policy.refill_per_sec)),
-            retry_after=0 if allowed else max(1, math.ceil(deficit / policy.refill_per_sec)),
-        )
+        return _decision(policy, allowed, tokens, cost)
 
     def _maybe_sweep(self, now: float) -> None:
         """Drop full buckets (lossless: a missing key starts full). Caller holds the lock."""
@@ -195,6 +205,97 @@ class InMemoryTokenBucketStore:
     def tracked_keys(self) -> int:
         with self._lock:
             return len(self._state)
+
+
+_REDIS_ERROR_LOG_EVERY_SECONDS = 30.0
+#: Seconds to skip Redis after an error, so a hung server doesn't slow every request.
+REDIS_RETRY_AFTER_SECONDS: float = _env_float("REDIS_RETRY_AFTER_SECONDS", 5.0)
+_last_redis_error_log = 0.0
+_redis_retry_at = 0.0
+
+
+def _redis_skipped() -> bool:
+    return time.monotonic() < _redis_retry_at
+
+
+def _log_redis_failure(what: str, exc: BaseException) -> None:
+    global _last_redis_error_log, _redis_retry_at
+    now = time.monotonic()
+    _redis_retry_at = now + REDIS_RETRY_AFTER_SECONDS
+    if now - _last_redis_error_log >= _REDIS_ERROR_LOG_EVERY_SECONDS:
+        _last_redis_error_log = now
+        logger.error("Redis unavailable for %s; using per-process fallback: %r", what, exc)
+
+
+# Same math as InMemoryTokenBucketStore.consume. Tokens go back as a string because
+# Redis turns Lua numbers into integers.
+_TOKEN_BUCKET_LUA = """
+local capacity = tonumber(ARGV[1])
+local refill = tonumber(ARGV[2])
+local cost = tonumber(ARGV[3])
+local now = tonumber(ARGV[4])
+local ttl_ms = tonumber(ARGV[5])
+local epsilon = tonumber(ARGV[6])
+if now < 0 then
+  local t = redis.call('TIME')
+  now = tonumber(t[1]) + tonumber(t[2]) / 1000000
+end
+local state = redis.call('HMGET', KEYS[1], 'tokens', 'updated')
+local tokens = tonumber(state[1])
+local updated = tonumber(state[2])
+if tokens == nil or updated == nil then
+  tokens = capacity
+  updated = now
+end
+local elapsed = now - updated
+if elapsed < 0 then elapsed = 0 end
+tokens = math.min(capacity, tokens + elapsed * refill)
+local allowed = 0
+if tokens + epsilon >= cost then
+  allowed = 1
+  tokens = tokens - cost
+  if tokens < 0 then tokens = 0 end
+end
+local encoded = string.format('%.17g', tokens)
+redis.call('HSET', KEYS[1], 'tokens', encoded, 'updated', string.format('%.17g', now))
+redis.call('PEXPIRE', KEYS[1], ttl_ms)
+return {allowed, encoded}
+"""
+
+
+class RedisTokenBucketStore:
+    """Token buckets shared across processes. Falls back to in-memory ones if Redis is down."""
+
+    def __init__(
+        self,
+        client: Any,
+        fallback: Optional[RateLimitStore] = None,
+        key_prefix: str = "rl:",
+        clock: Optional[Callable[[], float]] = None,
+    ) -> None:
+        self._script = client.register_script(_TOKEN_BUCKET_LUA)
+        self._fallback = fallback or InMemoryTokenBucketStore()
+        self._prefix = key_prefix
+        self._clock = clock  # tests only; otherwise Redis TIME is used
+
+    async def consume(self, key: str, policy: BucketPolicy, cost: float = 1.0) -> Decision:
+        if not ENABLED:
+            return _open_decision(policy)
+        if _redis_skipped():
+            return await self._fallback.consume(key, policy, cost)
+
+        now = self._clock() if self._clock is not None else -1
+        ttl_ms = math.ceil(policy.seconds_to_full * 1000) + 1000
+        try:
+            allowed, tokens = await self._script(
+                keys=[self._prefix + key],
+                args=[policy.capacity, policy.refill_per_sec, cost, now, ttl_ms, _EPSILON],
+            )
+        except Exception as exc:
+            _log_redis_failure("rate limiting", exc)
+            return await self._fallback.consume(key, policy, cost)
+
+        return _decision(policy, bool(int(allowed)), float(tokens), cost)
 
 
 # A research request is ~4 Tavily credits: capacity 20 caps a burst at ~80 credits,
@@ -234,7 +335,10 @@ class ConcurrencySlots:
         self._total_held = 0
         self._lock = threading.Lock()
 
-    def try_acquire(self, key: str) -> bool:
+    async def try_acquire(self, key: str) -> bool:
+        return self._try_acquire(key)
+
+    def _try_acquire(self, key: str) -> bool:
         with self._lock:
             if self._total_held >= self.total:
                 logger.warning(
@@ -265,6 +369,119 @@ class ConcurrencySlots:
 
 RESEARCH_SLOTS_PER_USER: int = _env_int("RESEARCH_MAX_CONCURRENT_PER_USER", 2)
 RESEARCH_SLOTS_GLOBAL: int = _env_int("RESEARCH_MAX_CONCURRENT_GLOBAL", 8)
+#: Must outlast a research request. Also how long a crashed worker can hold a slot.
+RESEARCH_SLOT_LEASE_SECONDS: float = _env_float("RESEARCH_SLOT_LEASE_SECONDS", 120)
+
+
+# Sorted set of lease ids, scored by expiry time in ms.
+_SLOT_LUA = """
+local now = tonumber(ARGV[3])
+if now < 0 then
+  local t = redis.call('TIME')
+  now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+end
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[1]) then
+  return 0
+end
+local lease_ms = tonumber(ARGV[2])
+redis.call('ZADD', KEYS[1], now + lease_ms, ARGV[4])
+redis.call('PEXPIRE', KEYS[1], lease_ms)
+return 1
+"""
+
+
+class RedisConcurrencySlots:
+    """
+    Per-user cap shared through Redis leases. The global cap stays per process, since
+    it's there to protect this process's threadpool.
+    """
+
+    def __init__(
+        self,
+        client: Any,
+        per_key: int,
+        total: int,
+        lease_seconds: float = RESEARCH_SLOT_LEASE_SECONDS,
+        key_prefix: str = "slots:",
+        clock_ms: Optional[Callable[[], float]] = None,
+    ) -> None:
+        self.per_key = per_key
+        self.total = total
+        self._client = client
+        self._script = client.register_script(_SLOT_LUA)
+        self._lease_ms = int(lease_seconds * 1000)
+        self._prefix = key_prefix
+        self._clock_ms = clock_ms  # tests only
+        self._bulkhead = ConcurrencySlots(per_key=total, total=total)
+        self._fallback = ConcurrencySlots(per_key=per_key, total=total)
+        # key -> our lease ids (None = taken from the fallback)
+        self._leases: Dict[str, List[Optional[str]]] = {}
+        self._pending: Set["asyncio.Task[Any]"] = set()
+
+    async def try_acquire(self, key: str) -> bool:
+        if not self._bulkhead._try_acquire(key):
+            return False
+        if _redis_skipped():
+            return self._acquire_fallback(key)
+
+        lease = uuid.uuid4().hex
+        now = self._clock_ms() if self._clock_ms is not None else -1
+        try:
+            granted = await self._script(
+                keys=[self._prefix + key],
+                args=[self.per_key, self._lease_ms, now, lease],
+            )
+        except asyncio.CancelledError:
+            self._bulkhead.release(key)
+            self._remove_lease(key, lease)
+            raise
+        except Exception as exc:
+            _log_redis_failure("research concurrency", exc)
+            return self._acquire_fallback(key)
+
+        if not int(granted):
+            self._bulkhead.release(key)
+            return False
+        self._leases.setdefault(key, []).append(lease)
+        return True
+
+    def _acquire_fallback(self, key: str) -> bool:
+        """Caller holds a bulkhead slot."""
+        if self._fallback._try_acquire(key):
+            self._leases.setdefault(key, []).append(None)
+            return True
+        self._bulkhead.release(key)
+        return False
+
+    def release(self, key: str) -> None:
+        # Not async: it runs in finally blocks that may already be cancelled.
+        leases = self._leases.get(key)
+        if not leases:
+            return
+        lease = leases.pop()
+        if not leases:
+            del self._leases[key]
+        self._bulkhead.release(key)
+        if lease is None:
+            self._fallback.release(key)
+        else:
+            self._remove_lease(key, lease)
+
+    def _remove_lease(self, key: str, lease: str) -> None:
+        task = asyncio.get_running_loop().create_task(self._zrem(key, lease))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _zrem(self, key: str, lease: str) -> None:
+        try:
+            await self._client.zrem(self._prefix + key, lease)
+        except Exception as exc:
+            # The lease still expires on its own.
+            _log_redis_failure("research concurrency", exc)
+
+    def in_flight(self) -> int:
+        return self._bulkhead.in_flight()
 
 
 def _parse_ip(raw: Optional[str]) -> Optional[ipaddress._BaseAddress]:

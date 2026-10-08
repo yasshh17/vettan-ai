@@ -932,16 +932,22 @@ RATE_LIMIT_ACCOUNT_REFILL_PER_MIN=1
 # run at once; a research request holds a threadpool slot plus several
 # upstream connections for its whole duration.
 RESEARCH_MAX_CONCURRENT_PER_USER=2
-RESEARCH_MAX_CONCURRENT_GLOBAL=8
+RESEARCH_MAX_CONCURRENT_GLOBAL=8     # per worker
+RESEARCH_SLOT_LEASE_SECONDS=120
+
+# ── Redis (needed for more than one worker) ──────────────────────────────
+REDIS_URL=redis://localhost:6379/0
+REDIS_TIMEOUT_SECONDS=0.25
+REDIS_RETRY_AFTER_SECONDS=5
+REDIS_MAX_CONNECTIONS=10        # per worker; workers x instances x this must fit the plan
+WEB_CONCURRENCY=1               # uvicorn workers; only raise with REDIS_URL set
 ```
 
-> **Rate limiting requires a single worker.** Buckets live in process memory
-> (`backend/utils/rate_limit.py`), which is correct for the one-worker
-> `backend/Procfile`. Under N workers each keeps its own buckets and every
-> limit is silently multiplied by N. The app logs a warning at startup if it
-> detects `WEB_CONCURRENCY > 1` or a `--workers` flag. Before scaling out,
-> implement the `RateLimitStore` protocol against Redis — it is one method,
-> and the in-memory implementation documents the atomicity it has to preserve.
+> **Set `REDIS_URL` before scaling out.** Without it, rate limits live in each
+> worker's memory, so N workers means N times the limit (the app warns about
+> this at startup). With it, all workers share one set of limits. If Redis goes
+> down, each worker falls back to its own limits and logs an error. On Render,
+> use a Key Value instance in the same region as the API.
 
 ---
 
@@ -987,6 +993,7 @@ git checkout -b feature/your-feature-name
 
 # 5. Test your changes
 cd frontend && pnpm tsc --noEmit         # Frontend typecheck
+cd backend && pip install -r requirements-dev.txt
 cd backend && python tests/test_isolation.py   # Tenant isolation + schema readiness
 cd backend && python tests/test_rate_limit.py  # Rate limiting
 # Both backend suites are standalone scripts, not pytest — run them directly.

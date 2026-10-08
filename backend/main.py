@@ -1,6 +1,6 @@
 """Vettan API: research, follow-ups, history and audio."""
 
-from fastapi import FastAPI, HTTPException, Header, BackgroundTasks, Depends, Query, Request
+from fastapi import FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -45,18 +45,37 @@ from utils.rate_limit import (
     RESEARCH_SLOTS_PER_USER,
     ConcurrencySlots,
     InMemoryTokenBucketStore,
+    RedisConcurrencySlots,
+    RedisTokenBucketStore,
 )
 from utils.rate_limit_http import RateLimitMiddleware, rate_limited, warn_if_multiprocess
 from utils import moderation, spend_guard
 
-# In-process buckets: correct only while this runs as a single worker.
-_rate_limit_store = InMemoryTokenBucketStore()
+# Without Redis, limits are per process, so run a single worker.
+_redis = None
+if os.getenv("REDIS_URL", "").strip():
+    import redis.asyncio as aioredis
 
-# Caps concurrent research; the buckets limit rate, not how many run at once.
-_research_slots = ConcurrencySlots(
-    per_key=RESEARCH_SLOTS_PER_USER,
-    total=RESEARCH_SLOTS_GLOBAL,
-)
+    _redis_timeout = float(os.getenv("REDIS_TIMEOUT_SECONDS", "0.25"))
+    _redis = aioredis.from_url(
+        os.environ["REDIS_URL"].strip(),
+        socket_timeout=_redis_timeout,
+        socket_connect_timeout=_redis_timeout,
+        health_check_interval=30,
+        # Per worker. Keep workers x instances x this under the plan's connection limit.
+        max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "10")),
+    )
+    _rate_limit_store = RedisTokenBucketStore(_redis)
+    # Caps concurrent research; the buckets limit rate, not how many run at once.
+    _research_slots = RedisConcurrencySlots(
+        _redis, per_key=RESEARCH_SLOTS_PER_USER, total=RESEARCH_SLOTS_GLOBAL
+    )
+else:
+    _rate_limit_store = InMemoryTokenBucketStore()
+    _research_slots = ConcurrencySlots(
+        per_key=RESEARCH_SLOTS_PER_USER,
+        total=RESEARCH_SLOTS_GLOBAL,
+    )
 
 # Daily spend caps. The token buckets limit rate, not total.
 _spend_store = spend_guard.PostgresSpendStore(get_admin_client)
@@ -68,7 +87,15 @@ _TOO_MANY_IN_FLIGHT = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    warn_if_multiprocess(logger)
+    warn_if_multiprocess(logger, shared_store=_redis is not None)
+    if _redis is not None:
+        try:
+            await _redis.ping()
+            logger.info("Rate limits and research slots are shared through Redis")
+        except Exception as e:
+            logger.error(f"Redis is configured but unreachable ({e!r}); using per-process limits until it recovers")
+    else:
+        logger.info("REDIS_URL not set: rate limits are per process (single worker only)")
     logger.info(
         "Spend guard %s: user $%.2f/day, global $%.2f/day",
         "on" if spend_guard.ENABLED else "OFF",
@@ -84,6 +111,8 @@ async def lifespan(app: FastAPI):
     # Connect at startup so the first request doesn't pay for it.
     await asyncio.to_thread(get_database_v2)
     yield
+    if _redis is not None:
+        await _redis.aclose()
 
 
 app = FastAPI(
@@ -231,11 +260,8 @@ def _db_for(user: AuthedUser):
     return get_user_scoped_db(user.token)
 
 
-# Saves run as background tasks after the response is sent. The same message dicts
-# are returned and saved, so response ids match the rows.
-
-# session_id -> event set when that session's background save finishes.
-_pending_saves: Dict[str, threading.Event] = {}
+# Saves finish before we respond, so the next request sees them whichever worker
+# serves it. Responses reuse the saved message dicts, so ids match the rows.
 
 
 def _now_iso() -> str:
@@ -274,37 +300,8 @@ def _to_message(msg: Dict[str, Any]) -> Message:
     )
 
 
-def _register_pending_save(session_id: str) -> threading.Event:
-    event = threading.Event()
-    _pending_saves[session_id] = event
-    return event
-
-
-def _finish_pending_save(session_id: str, event: threading.Event) -> None:
-    event.set()
-    if _pending_saves.get(session_id) is event:
-        del _pending_saves[session_id]
-
-
-async def _wait_for_pending_save(session_id: str, timeout: float = 10.0) -> None:
-    """Wait for an in-flight save, or a quick follow-up finds no rows."""
-    event = _pending_saves.get(session_id)
-    if event and not event.is_set():
-        logger.info(f"Waiting for pending save of session {session_id[:8]}")
-        finished = await asyncio.to_thread(event.wait, timeout)
-        if not finished:
-            logger.warning(f"Pending save of session {session_id[:8]} did not finish within {timeout}s")
-
-
-async def _wait_for_all_pending_saves(timeout: float = 10.0) -> None:
-    """So a history read right after a query includes it."""
-    for session_id in list(_pending_saves):
-        await _wait_for_pending_save(session_id, timeout)
-
-
 def _persist_new_session(
     db,
-    event: threading.Event,
     session_id: str,
     query: str,
     report: str,
@@ -334,21 +331,18 @@ def _persist_new_session(
                 )
                 return
             if saved:
-                logger.info(f"[DB] saved session {session_id[:8]} in background ({time.perf_counter() - started:.2f}s)")
+                logger.info(f"[DB] saved session {session_id[:8]} ({time.perf_counter() - started:.2f}s)")
                 return
             if attempt == 1:
                 logger.warning(f"Save of session {session_id[:8]} failed, retrying once")
                 time.sleep(1.0)
         logger.error(f"Save of session {session_id[:8]} failed after retry; answer was returned but not persisted")
     except Exception as e:
-        logger.error(f"Background save of session {session_id[:8]} crashed: {e}")
-    finally:
-        _finish_pending_save(session_id, event)
+        logger.error(f"Save of session {session_id[:8]} crashed: {e}")
 
 
 def _persist_followup(
     db,
-    event: threading.Event,
     session_id: str,
     messages: List[Dict[str, Any]],
     user_id: str
@@ -358,16 +352,14 @@ def _persist_followup(
     try:
         for attempt in (1, 2):
             if db.add_messages_batch(session_id, messages, user_id, touch_session=True):
-                logger.info(f"[DB] saved follow-up in session {session_id[:8]} in background ({time.perf_counter() - started:.2f}s)")
+                logger.info(f"[DB] saved follow-up in session {session_id[:8]} ({time.perf_counter() - started:.2f}s)")
                 return
             if attempt == 1:
                 logger.warning(f"Save of follow-up in session {session_id[:8]} failed, retrying once")
                 time.sleep(1.0)
         logger.error(f"Save of follow-up in session {session_id[:8]} failed after retry; answer was returned but not persisted")
     except Exception as e:
-        logger.error(f"Background save of follow-up in session {session_id[:8]} crashed: {e}")
-    finally:
-        _finish_pending_save(session_id, event)
+        logger.error(f"Save of follow-up in session {session_id[:8]} crashed: {e}")
 
 
 @app.get("/")
@@ -449,7 +441,6 @@ async def _cached_session(db, query: str, user_id: str) -> Optional[Dict[str, An
 @app.post("/api/research", response_model=ResearchResponse)
 async def research(
     request: ResearchRequest,
-    background_tasks: BackgroundTasks,
     user: AuthedUser = Depends(research_user)
 ):
     """
@@ -457,7 +448,7 @@ async def research(
     re-running the pipeline. Every DB call is scoped to the caller.
     """
     # Same slots as the stream endpoint, since the frontend falls back to this one.
-    if not _research_slots.try_acquire(user.id):
+    if not await _research_slots.try_acquire(user.id):
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
     try:
@@ -482,8 +473,6 @@ async def research(
             
             if not db or not db.is_connected:
                 raise HTTPException(status_code=503, detail="Database required for follow-ups")
-            
-            await _wait_for_pending_save(request.session_id)
 
             logger.info(f"Loading conversation history...")
             db_started = time.perf_counter()
@@ -531,9 +520,8 @@ async def research(
                 }
             )
 
-            pending = _register_pending_save(request.session_id)
-            background_tasks.add_task(
-                _persist_followup, db, pending, request.session_id, [user_msg, assistant_msg], user.id
+            await asyncio.to_thread(
+                _persist_followup, db, request.session_id, [user_msg, assistant_msg], user.id
             )
 
             formatted_messages = [
@@ -602,11 +590,9 @@ async def research(
 
         if is_new_session:
             if db and db.is_connected and len(output) > 100:
-                pending = _register_pending_save(session_id)
-                background_tasks.add_task(
+                await asyncio.to_thread(
                     _persist_new_session,
                     db,
-                    pending,
                     session_id,
                     request.query,
                     output,
@@ -646,7 +632,6 @@ async def research(
 @app.post("/api/research/stream")
 async def research_stream_endpoint(
     request: ResearchRequest,
-    background_tasks: BackgroundTasks,
     user: AuthedUser = Depends(research_user)
 ):
     """
@@ -683,7 +668,7 @@ async def research_stream_endpoint(
         raise moderation.blocked("input", verdict)
 
     # Not a yield dependency: its teardown runs before the stream starts.
-    if not _research_slots.try_acquire(user.id):
+    if not await _research_slots.try_acquire(user.id):
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
     # Charge before streaming so a rejection is a real 429/503, not an SSE error.
@@ -708,8 +693,6 @@ async def research_stream_endpoint(
                     await spend_guard.refund(_spend_store, reservation)
                     yield _sse("error", {"message": "Database required for follow-ups"})
                     return
-
-                await _wait_for_pending_save(request.session_id)
 
                 db_started = time.perf_counter()
                 history = await asyncio.to_thread(
@@ -752,9 +735,8 @@ async def research_stream_endpoint(
                     citations=final["citations"], metadata=metadata
                 )
 
-                pending = _register_pending_save(request.session_id)
-                background_tasks.add_task(
-                    _persist_followup, db, pending, request.session_id, [user_msg, assistant_msg], user.id
+                await asyncio.to_thread(
+                    _persist_followup, db, request.session_id, [user_msg, assistant_msg], user.id
                 )
                 saved = True
 
@@ -832,10 +814,9 @@ async def research_stream_endpoint(
             )
 
             if db and db.is_connected and len(output) > 100:
-                pending = _register_pending_save(session_id)
-                background_tasks.add_task(
+                await asyncio.to_thread(
                     _persist_new_session,
-                    db, pending, session_id, request.query, output,
+                    db, session_id, request.query, output,
                     final["citations"], dict(metadata),
                     [user_msg, assistant_msg], user.id
                 )
@@ -992,7 +973,6 @@ async def get_history(
     """The caller's recent sessions."""
     try:
         logger.info(f"📚 Fetching history: limit={limit}")
-        await _wait_for_all_pending_saves()
 
         db = _db_for(user)
         # An empty list must mean "no history", never "the query failed".
