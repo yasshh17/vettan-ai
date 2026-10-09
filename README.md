@@ -213,6 +213,7 @@ sequenceDiagram
 | Content | OpenAI moderation on input (before any paid work) and on output | `backend/utils/moderation.py` |
 | Cost | Atomic daily spend reservation per user and globally, refunded on failure | `backend/utils/spend_guard.py`, `supabase/migrations/0006_spend_guard.sql` |
 | Data | Row-level security; backend queries with the caller's JWT, never an unscoped client | `supabase/migrations/0003_enable_rls.sql`, `backend/database/` |
+| Detect | Refused requests (429, 401, moderation, spend cap, in-flight cap) and account deletions log a `[Security]` line. IPs are hashed and query text is never logged | `backend/utils/audit.py` |
 | CI | Type-check, security regression tests, isolation / rate-limit / spend / moderation tests, dependency audit, secret scan | `.github/workflows/ci.yml` |
 
 ### Component Architecture
@@ -1011,6 +1012,9 @@ REDIS_TIMEOUT_SECONDS=0.25
 REDIS_RETRY_AFTER_SECONDS=5
 REDIS_MAX_CONNECTIONS=10        # per worker; workers x instances x this must fit the plan
 WEB_CONCURRENCY=1               # uvicorn workers; only raise with REDIS_URL set
+
+# ── Security log ─────────────────────────────────────────────────────────
+AUDIT_IP_SALT=change-me         # any random string; used to hash IPs in [Security] logs
 ```
 
 > **Set `REDIS_URL` before scaling out.** Without it, rate limits live in each

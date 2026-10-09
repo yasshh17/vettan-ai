@@ -14,7 +14,7 @@ from fastapi import Depends, HTTPException, Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from utils import rate_limit
+from utils import audit, rate_limit
 from utils.rate_limit import BucketPolicy, Decision, POLICIES, RateLimitStore, client_ip
 
 logger = logging.getLogger(__name__)
@@ -91,9 +91,11 @@ class RateLimitMiddleware:
         peer = scope["client"][0] if scope.get("client") else None
         self._log_forwarding_once(headers, peer)
 
-        decision = await self.store.consume(f"ip:{client_ip(headers, peer, self.trusted_hops)}", self.policy)
+        ip = client_ip(headers, peer, self.trusted_hops)
+        decision = await self.store.consume(f"ip:{ip}", self.policy)
 
         if not decision.allowed:
+            audit.record("rate_limited", ip=ip, bucket=decision.policy, path=scope.get("path"))
             # Can't raise HTTPException here; it would surface as a 500.
             response = JSONResponse(
                 {"detail": _detail(decision)},
@@ -145,6 +147,13 @@ class RateLimitMiddleware:
         )
 
 
+# Same lookup the IP bucket uses.
+def request_ip(request: Request) -> Optional[str]:
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    peer = request.client.host if request.client else None
+    return client_ip(headers, peer, rate_limit.TRUSTED_HOPS)
+
+
 def rate_limited(
     bucket: str,
     auth_dependency: Callable[..., Any],
@@ -167,6 +176,7 @@ def rate_limited(
         request.state.rate_limit = decision
 
         if not decision.allowed:
+            audit.record("rate_limited", user_id=user.id, ip=request_ip(request), bucket=bucket)
             raise HTTPException(
                 status_code=429,
                 detail=_detail(decision),

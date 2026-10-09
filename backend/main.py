@@ -48,8 +48,8 @@ from utils.rate_limit import (
     RedisConcurrencySlots,
     RedisTokenBucketStore,
 )
-from utils.rate_limit_http import RateLimitMiddleware, rate_limited, warn_if_multiprocess
-from utils import moderation, spend_guard
+from utils.rate_limit_http import RateLimitMiddleware, rate_limited, request_ip, warn_if_multiprocess
+from utils import audit, moderation, spend_guard
 
 # Without Redis, limits are per process, so run a single worker.
 _redis = None
@@ -240,9 +240,14 @@ def _verify_access_token(authorization: Optional[str]) -> AuthedUser:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> AuthedUser:
+async def get_current_user(request: Request, authorization: Optional[str] = Header(None)) -> AuthedUser:
     # get_user() blocks on the network; keep it off the event loop.
-    return await asyncio.to_thread(_verify_access_token, authorization)
+    try:
+        return await asyncio.to_thread(_verify_access_token, authorization)
+    except HTTPException as e:
+        if e.status_code == 401:
+            audit.record("auth_failed", ip=request_ip(request), reason=e.detail, path=request.url.path)
+        raise
 
 
 # get_current_user plus a per-user bucket. research and research/stream share one
@@ -449,6 +454,7 @@ async def research(
     """
     # Same slots as the stream endpoint, since the frontend falls back to this one.
     if not await _research_slots.try_acquire(user.id):
+        audit.record("inflight_rejected", user_id=user.id)
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
     try:
@@ -669,6 +675,7 @@ async def research_stream_endpoint(
 
     # Not a yield dependency: its teardown runs before the stream starts.
     if not await _research_slots.try_acquire(user.id):
+        audit.record("inflight_rejected", user_id=user.id)
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
     # Charge before streaming so a rejection is a real 429/503, not an SSE error.
@@ -1128,6 +1135,7 @@ async def delete_account(user: AuthedUser = Depends(account_user)):
         logger.info(f"Deleting auth user: {user_id[:8]}...")
         admin_client.auth.admin.delete_user(user_id)
         logger.info(f"Auth user deleted: {user_id[:8]}...")
+        audit.record("account_deleted", user_id=user_id)
         return {"success": True, "message": "Account deleted"}
     except HTTPException:
         raise

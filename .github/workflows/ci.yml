@@ -81,6 +81,9 @@ jobs:
       - name: Moderation tests
         run: python tests/test_moderation.py
 
+      - name: Security audit log tests
+        run: python tests/test_audit.py
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

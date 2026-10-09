@@ -14,6 +14,7 @@ from typing import Dict, FrozenSet, List, Literal, Union
 
 from fastapi import HTTPException
 
+from utils import audit
 from utils.rate_limit import _env_bool, _env_float
 
 logger = logging.getLogger(__name__)
@@ -139,7 +140,7 @@ async def check(text: str, source: Source, user_id: str = "") -> Verdict:
                 source, user_id[:8], ", ".join(sorted(raw.flagged)),
             )
         return CLEAN
-    logger.warning("Moderation blocked %s for user %s: %s", source, user_id[:8], ", ".join(hits))
+    audit.record("moderation_blocked", user_id=user_id, source=source, categories=hits)
     return Verdict(True, hits)
 
 
