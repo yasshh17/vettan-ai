@@ -7,14 +7,14 @@
 **Think deeper. Discover faster.**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-18.0+-61dafb?logo=react&logoColor=white)](https://react.dev/)
+[![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev/)
 [![Next.js](https://img.shields.io/badge/Next.js-15.0+-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776ab?logo=python&logoColor=white)](https://python.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
-[Live Demo](https://vettan-ai.vercel.app) • [Documentation](#-api-documentation) • [Report Bug](../../issues) • [Request Feature](../../issues)
+[Live Demo](https://vettan-ai.vercel.app) • [Documentation](#api-documentation) • [Report Bug](../../issues) • [Request Feature](../../issues)
 
 </div>
 
@@ -22,19 +22,19 @@
 
 ## Table of Contents
 
-- [Overview](#-overview)
-- [Key Features](#-key-features)
-- [Demo](#-demo)
-- [Architecture](#%EF%B8%8F-architecture)
-- [Tech Stack](#%EF%B8%8F-tech-stack)
-- [Getting Started](#-getting-started)
-- [API Documentation](#-api-documentation)
-- [Performance](#-performance)
-- [Security](#-security)
-- [Deployment](#-deployment)
-- [Roadmap](#%EF%B8%8F-roadmap)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Usage Examples](#-usage-examples)
+- [API Documentation](#api-documentation)
+- [Implementation Notes](#-implementation-notes)
+- [Security](#security)
+- [Deployment](#deployment)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -111,125 +111,185 @@ Vettan implements a **multi-step research pipeline** to:
 
 ### System Architecture
 ```mermaid
-graph TB
-    subgraph "Client Layer"
-        Client[Next.js Frontend<br/>React 18 + TypeScript]
+flowchart LR
+    U(["<b>User</b><br/>browser"])
+    FE["<b>Next.js 15</b><br/>Vercel"]
+
+    subgraph API["FastAPI · Render"]
+        direction LR
+        G["<b>Request guards</b><br/>rate limits · JWT auth<br/>moderation · spend cap"]
+        P["<b>Research pipeline</b><br/>decompose<br/>→ parallel search<br/>→ streamed synthesis"]
+        G -->|"allowed"| P
     end
-    
-    subgraph "API Layer"
-        API[FastAPI Backend<br/>Python 3.11 Async]
-    end
-    
-    subgraph "Data Layer"
-        DB[(Supabase PostgreSQL<br/>Conversation Storage)]
-    end
-    
-    subgraph "AI Services"
-        LLM[OpenAI GPT-4o-mini<br/>Language Model]
-        Search[Tavily Search API<br/>Multi-Source Web Search]
-        TTS[OpenAI TTS<br/>6-Voice Audio Generation]
-    end
-    
-    Client -->|REST API| API
-    API -->|Decompose and synthesize| LLM
-    API -->|Web Research| Search
-    API -->|Persist Sessions| DB
-    API -->|Generate Speech| TTS
-    
-    style Client fill:#8b5cf6
-    style API fill:#6366f1
-    style DB fill:#3ecf8e
-    style LLM fill:#f59e0b
-    style Search fill:#06b6d4
-    style TTS fill:#ec4899
+
+    OAI["<b>OpenAI</b><br/>GPT-4o-mini · Moderation · TTS"]
+    TAV["<b>Tavily</b><br/>web search"]
+    R[("<b>Redis</b><br/>shared rate limits")]
+    DB[("<b>Supabase Postgres</b><br/>auth · history · budgets<br/>row-level security")]
+
+    U --> FE
+    FE -->|"REST + SSE stream"| G
+    G -.->|"rate-limit tokens"| R
+    G -.->|"verify JWT · spend budget"| DB
+    G -.->|"moderation · speech"| OAI
+    P -->|"decompose · synthesize"| OAI
+    P -->|"parallel search"| TAV
+    P -->|"save session"| DB
+
+    classDef fe fill:#7c3aed,stroke:#5b21b6,color:#ffffff
+    classDef guard fill:#d97706,stroke:#92400e,color:#ffffff
+    classDef core fill:#4f46e5,stroke:#3730a3,color:#ffffff
+    classDef ext fill:#0891b2,stroke:#155e75,color:#ffffff
+    classDef store fill:#059669,stroke:#065f46,color:#ffffff
+    classDef layer fill:transparent,stroke:#64748b,stroke-dasharray:4 3
+    class U,FE fe
+    class G guard
+    class P core
+    class OAI,TAV ext
+    class R,DB store
+    class API layer
 ```
+
+<details>
+<summary><b>Request lifecycle</b> — what happens on one <code>POST /api/research/stream</code></summary>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant V as Vercel proxy
+    participant A as FastAPI
+    participant R as Redis
+    participant M as OpenAI Moderation
+    participant P as Supabase Postgres
+    participant L as gpt-4o-mini
+    participant T as Tavily
+
+    B->>V: query + Bearer JWT
+    V->>A: /api/research/stream
+    A->>R: per-IP token bucket
+    A->>A: verify Supabase JWT
+    A->>R: per-user token bucket
+    Note over B,A: any limit exceeded → 429 + Retry-After
+    par in parallel
+        A->>M: moderate input
+    and
+        A->>P: cache lookup (scoped to user)
+    end
+    alt flagged
+        A-->>B: refusal (nothing paid runs)
+    else cache hit
+        A-->>B: cached report (free)
+    else cache miss
+        A->>A: one in-flight research per user
+        A->>P: reserve_spend (user + global daily budget)
+        A->>L: decompose into sub-queries
+        par search wave, 6s deadline
+            A->>T: sub-query 1..n
+        end
+        A->>L: synthesize (stream)
+        L-->>A: tokens
+        A-->>B: SSE tokens + citations
+        A->>M: moderate output
+        alt flagged
+            A-->>B: blocked event (not saved)
+        else clean
+            A->>P: persist session + messages (RLS)
+            A-->>B: done
+        end
+        opt pipeline fails
+            A->>P: refund_spend
+        end
+    end
+```
+
+</details>
+
+### Defense in Depth
+| Layer | Guard | Where |
+|---|---|---|
+| Edge | Per-IP token bucket, shared across workers via Redis | `backend/utils/rate_limit.py`, `rate_limit_http.py` |
+| Identity | Supabase JWT on every API call; per-user buckets per endpoint class | `backend/main.py` |
+| Content | OpenAI moderation on input (before any paid work) and on output | `backend/utils/moderation.py` |
+| Cost | Atomic daily spend reservation per user and globally, refunded on failure | `backend/utils/spend_guard.py`, `supabase/migrations/0006_spend_guard.sql` |
+| Data | Row-level security; backend queries with the caller's JWT, never an unscoped client | `supabase/migrations/0003_enable_rls.sql`, `backend/database/` |
+| CI | Type-check, security regression tests, isolation / rate-limit / spend / moderation tests, dependency audit, secret scan | `.github/workflows/ci.yml` |
 
 ### Component Architecture
 ```
 vettan-ai/
-├── frontend/                    # Next.js 15 + React 18 + TypeScript
+├── frontend/                        # Next.js 15 + React 19 + TypeScript (Vercel)
 │   ├── src/
-│   │   ├── app/                # Next.js App Router
-│   │   │   ├── page.tsx        # Main research interface
-│   │   │   ├── layout.tsx      # Root layout with Sidebar
-│   │   │   ├── globals.css     # Global styles + design tokens
-│   │   │   └── favicon.ico     # Brand favicon
+│   │   ├── app/                     # App Router: landing, /app, auth, legal pages
 │   │   ├── components/
-│   │   │   ├── layout/         # Layout components
-│   │   │   │   └── sidebar.tsx # History, favorites, search
-│   │   │   ├── research/       # Research-specific components
-│   │   │   │   ├── active-chat-header.tsx
-│   │   │   │   ├── active-chat-title.tsx
-│   │   │   │   ├── audio-player.tsx        # TTS playback
-│   │   │   │   ├── collapsible-sources.tsx # Citation display
-│   │   │   │   ├── stats-panel.tsx         # Token/cost metrics
-│   │   │   │   ├── sticky-search-bar.tsx   # 64px search input
-│   │   │   │   ├── voice-mode.tsx          # Real-time voice
-│   │   │   │   └── voice-search-bar.tsx    # Voice input
-│   │   │   └── ui/             # shadcn/ui components
-│   │   │       ├── button.tsx
-│   │   │       ├── card.tsx
-│   │   │       ├── toast.tsx
-│   │   │       └── ...
-│   │   ├── hooks/              # Custom React hooks
-│   │   │   └── use-toast.ts    # Toast notification hook
-│   │   ├── lib/                # Utility functions
-│   │   │   ├── api.ts          # API client helpers
-│   │   │   └── utils.ts        # General utilities
-│   │   └── types/              # TypeScript definitions
-│   ├── public/                 # Static assets
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── tailwind.config.ts
-│   ├── next.config.ts
-│   └── postcss.config.mjs
+│   │   │   ├── auth/                # Sign-in / sign-up / password reset (Supabase Auth)
+│   │   │   ├── landing/             # Marketing page sections
+│   │   │   ├── layout/              # Sidebar: history, favorites, search
+│   │   │   ├── legal/               # Terms, Privacy, Usage Policy rendering
+│   │   │   ├── research/            # Chat, sources, audio player, voice mode, stats
+│   │   │   ├── settings/            # Settings dialog
+│   │   │   └── ui/                  # shadcn/ui primitives
+│   │   ├── content/legal/           # Legal page content
+│   │   ├── lib/
+│   │   │   ├── api.ts               # Backend API client
+│   │   │   ├── auth-fetch.ts        # Authenticated fetch (Bearer JWT, refusals)
+│   │   │   ├── research-stream.ts   # SSE stream consumer
+│   │   │   └── supabase/            # Browser, server and middleware clients
+│   │   ├── middleware.ts            # Session refresh + route protection
+│   │   └── __tests__/               # Vitest: security + unit regression tests
+│   ├── vercel.json                  # /api/backend/* → Render rewrite
+│   └── package.json
 │
-└── backend/                     # FastAPI + Python 3.11
-    ├── agent/
-    │   ├── research_pipeline.py         # Active decomposition, search, ranking, synthesis
-    │   ├── prompts.py                   # Dynamic query-decomposition prompt
-    │   └── ...                          # Earlier experimental agent implementations
-    ├── audio/                   # Audio generation
-    │   └── tts.py              # OpenAI TTS integration
-    ├── database/                # Database layer
-    │   ├── supabase_client_v2.py       # Supabase client
-    │   └── supabase_client.py          # Legacy client
-    ├── tools/                   # Agent tools
-    │   ├── multi_hop_search.py         # Multi-step search
-    │   ├── scraper.py                  # Web scraping
-    │   ├── search.py                   # Tavily integration
-    │   └── source_ranker.py            # Source quality ranking
-    ├── utils/                   # Utilities
-    │   ├── citation_extractor.py       # Extract citations
-    │   └── token_tracker.py            # Cost tracking
-    ├── main.py                  # FastAPI application entry
-    ├── requirements.txt         # Python dependencies
-    ├── runtime.txt              # Python version for deployment
-    ├── Procfile                 # Render deployment config
+├── backend/                         # FastAPI + Python 3.11 (Render)
+│   ├── main.py                      # App, auth dependency, endpoints, SSE streaming
+│   ├── agent/
+│   │   ├── research_pipeline.py     # Decompose → parallel Tavily search → synthesis
+│   │   └── query_decomposer.py      # Sub-query generation
+│   ├── audio/tts.py                 # OpenAI TTS, chunked for long text
+│   ├── database/
+│   │   ├── supabase_client_v2.py    # User-scoped client (RLS applies)
+│   │   └── supabase_admin_client.py # Service-role client, account deletion only
+│   ├── utils/
+│   │   ├── rate_limit.py            # Token buckets, Redis-shared or in-memory
+│   │   ├── rate_limit_http.py       # Per-IP middleware + per-user dependencies
+│   │   ├── moderation.py            # OpenAI moderation on input and output
+│   │   ├── spend_guard.py           # Daily per-user and global spend caps
+│   │   ├── citation_extractor.py    # Citation parsing
+│   │   └── token_tracker.py         # Token and cost accounting
+│   ├── tests/                       # Isolation, rate limit, spend, moderation tests
+│   ├── requirements.txt
+│   ├── runtime.txt
+│   └── Procfile
+│
+├── supabase/migrations/             # Schema, RLS, spend guard, profiles
+└── .github/workflows/ci.yml         # Type-check, tests, build, audit, secret scan
 ```
 
 ### Data Flow
 ```
 1. User submits query via sticky search bar
    ↓
-2. Frontend validates input and sends POST to /api/research
+2. Frontend sends POST /api/research/stream with the user's JWT
+   (falls back to /api/research if streaming fails)
    ↓
-3. FastAPI decomposes the question into 3-4 focused search queries
+3. Guards run: rate limits, auth, input moderation, cache check, spend cap
    ↓
-4. Tavily searches run concurrently
+4. FastAPI decomposes the question into 3-4 focused search queries
+   ↓
+5. Tavily searches run concurrently
    ├─ Results are deduplicated by URL
    ├─ Results are ranked by the returned relevance score
    └─ Up to five sources are selected
    ↓
-5. GPT-4o-mini synthesizes findings into comprehensive report
+6. GPT-4o-mini streams the report over SSE; output is moderated
    ↓
-6. Selected source metadata is returned with the report
+7. Selected source metadata is returned with the report
    ↓
-7. Response + citations persisted to Supabase PostgreSQL
+8. Response + citations persisted to Supabase PostgreSQL
    ↓
-8. The normalized query result is cached for an exact future match
+9. The normalized query result is cached for an exact future match
    ↓
-9. Frontend receives response and renders:
+10. Frontend receives response and renders:
    ├─ User message bubble (gradient, right-aligned)
    ├─ AI research response (markdown-formatted)
    ├─ Collapsible sources section (cascade animation)
@@ -259,9 +319,9 @@ vettan-ai/
 ```json
 {
   "framework": "Next.js 15 (App Router with Server Components)",
-  "runtime": "React 18 (Server & Client Components)",
+  "runtime": "React 19 (Server & Client Components)",
   "language": "TypeScript 5.0+ (strict mode enabled)",
-  "styling": "Tailwind CSS 3.4 (utility-first)",
+  "styling": "Tailwind CSS 4 (utility-first)",
   "components": "shadcn/ui + custom components",
   "state_management": "React Hooks + SWR (stale-while-revalidate)",
   "data_fetching": "SWR (client) + fetch (server)",
@@ -275,16 +335,16 @@ vettan-ai/
 ### Backend Stack
 ```json
 {
-  "framework": "FastAPI 0.100+",
+  "framework": "FastAPI 0.109",
   "language": "Python 3.11",
   "server": "Uvicorn (ASGI server with async support)",
-  "research_pipeline": "Custom async decomposition, search, ranking, and synthesis",
+  "research_pipeline": "Custom async decomposition, parallel search, ranking, and synthesis",
   "llm": "OpenAI GPT-4o-mini",
   "search_api": "Tavily API (multi-source web search)",
   "audio": "OpenAI Text-to-Speech (TTS)",
   "database": "Supabase (Managed PostgreSQL 15)",
   "database_client": "supabase-py",
-  "validation": "Pydantic 2.0",
+  "validation": "Pydantic 2.10",
   "environment": "python-dotenv",
   "deployment": "Render (managed Python hosting)"
 }
@@ -295,8 +355,6 @@ vettan-ai/
 {
   "research_pipeline": "Query decomposition, parallel search, ranking, and synthesis",
   "query_decomposer": "Generates 3-4 focused search queries",
-  "web_scraper": "Content extraction from URLs",
-  "source_ranker": "Source quality assessment",
   "citation_extractor": "Automatic citation parsing",
   "token_tracker": "Cost and usage monitoring"
 }
@@ -323,8 +381,6 @@ node >= 18.0.0
 python >= 3.11
 postgresql >= 15 (or Supabase account)
 
-# Recommended
-pnpm >= 8.0.0  # Faster than npm
 ```
 
 ### Quick Start (10 minutes)
@@ -344,8 +400,6 @@ cat > .env << 'EOF'
 # AI Services
 OPENAI_API_KEY=sk-proj-your-key-here
 TAVILY_API_KEY=tvly-your-key-here
-OPENAI_MODEL=gpt-4o-mini
-MAX_ITERATIONS=10
 
 # Supabase Database
 SUPABASE_URL=https://your-project.supabase.co
@@ -357,15 +411,17 @@ uvicorn main:app --reload --port 8000
 
 # 5. Frontend setup (new terminal)
 cd ../frontend
-pnpm install  # or: npm install
+npm install
 
 # 6. Configure frontend environment
 cat > .env.local << 'EOF'
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 EOF
 
 # 7. Start frontend development server
-pnpm dev  # or: npm run dev
+npm run dev
 
 # 8. Open browser
 # Navigate to: http://localhost:3000
@@ -392,15 +448,10 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Create environment file
-cp .env.example .env  # If you have .env.example
-# Or create manually:
-
 cat > .env << 'EOF'
 # AI Services
 OPENAI_API_KEY=sk-proj-...
 TAVILY_API_KEY=tvly-...
-OPENAI_MODEL=gpt-4o-mini
-MAX_ITERATIONS=10
 
 # Supabase Database
 SUPABASE_URL=https://xxxxx.supabase.co
@@ -419,9 +470,6 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 cd frontend
 
-# Install dependencies (choose one)
-pnpm install  # Recommended (faster)
-# or
 npm install
 
 # Create environment file
@@ -429,22 +477,26 @@ cat > .env.local << 'EOF'
 # Backend API endpoint
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
+# Supabase Auth (anon key is public by design; RLS protects the data)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
 # Optional: App URL for metadata
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 EOF
 
 # Development mode with hot reload
-pnpm dev
+npm run dev
 
 # Production build (test locally)
-pnpm build
-pnpm start
+npm run build
+npm start
 
 # Type checking
-pnpm type-check
+npx tsc --noEmit
 
-# Linting
-pnpm lint
+# Tests (Vitest)
+npm test
 ```
 
 ### Supabase Database Setup
@@ -515,10 +567,17 @@ and are deliberately invisible to every account.
 
 ### Basic Research Query
 ```typescript
+// Every endpoint requires a Supabase access token:
+// const { data: { session } } = await supabase.auth.getSession()
+// const accessToken = session.access_token
+
 // Submit research query via API
 const response = await fetch('http://localhost:8000/api/research', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`  // Supabase session JWT
+  },
   body: JSON.stringify({
     query: "What are the latest developments in fusion energy 2025?",
     use_cache: true
@@ -538,7 +597,10 @@ console.log(data.metadata)    // Pipeline name, selected-source count, and timin
 // Continue existing research with context
 const followUp = await fetch('http://localhost:8000/api/research', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`  // Supabase session JWT
+  },
   body: JSON.stringify({
     query: "How does this compare to traditional nuclear energy?",
     session_id: "previous-session-uuid",
@@ -554,7 +616,10 @@ const followUp = await fetch('http://localhost:8000/api/research', {
 // Convert research to natural speech
 const audioResponse = await fetch('http://localhost:8000/api/audio', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`  // Supabase session JWT
+  },
   body: JSON.stringify({
     text: researchOutput,
     voice: 'nova'  // Options: nova, alloy, echo, fable, onyx, shimmer
@@ -578,24 +643,28 @@ audio.play()
 ### Manage Conversation History
 ```typescript
 // Get all conversations
-const history = await fetch('http://localhost:8000/api/history')
+const auth = { 'Authorization': `Bearer ${accessToken}` }
+const history = await fetch('http://localhost:8000/api/history', { headers: auth })
 const { sessions } = await history.json()
 
 // Rename conversation
 await fetch(`http://localhost:8000/api/history/${sessionId}`, {
   method: 'PATCH',
+  headers: { ...auth, 'Content-Type': 'application/json' },
   body: JSON.stringify({ query: "New Title" })
 })
 
 // Toggle favorite
 await fetch(`http://localhost:8000/api/history/${sessionId}`, {
   method: 'PATCH',
+  headers: { ...auth, 'Content-Type': 'application/json' },
   body: JSON.stringify({ is_favorite: true })
 })
 
 // Delete conversation
 await fetch(`http://localhost:8000/api/history/${sessionId}`, {
-  method: 'DELETE'
+  method: 'DELETE',
+  headers: auth
 })
 ```
 
@@ -645,6 +714,7 @@ interface Citation {
 ```bash
 curl -X POST http://localhost:8000/api/research \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -d '{
     "query": "Best AI coding assistants this year"
   }'
@@ -657,7 +727,7 @@ Generate natural speech from text using OpenAI TTS.
 **Request:**
 ```typescript
 interface AudioRequest {
-  text: string               // Text to convert (max ~4000 chars)
+  text: string               // Text to convert (max 15,000 chars; chunked internally)
   voice?: string             // Voice ID (default: 'nova')
                             // Options: nova, alloy, echo, fable, onyx, shimmer
 }
@@ -667,8 +737,10 @@ interface AudioRequest {
 ```typescript
 interface AudioResponse {
   audio: string              // Base64-encoded MP3 audio
-  cost: number              // Generation cost (USD)
-  duration: number          // Audio length (seconds)
+  cost: number               // Estimated generation cost (USD)
+  length_chars: number       // Characters converted
+  voice: string              // Voice used
+  format: "mp3"
 }
 ```
 
@@ -706,7 +778,7 @@ interface UpdateSessionRequest {
 
 Delete conversation and all associated messages.
 
-**Response:** `204 No Content`
+**Response:** `{ success: true, message: "Session deleted", session_id }` — `404` if the session does not exist or belongs to another user.
 
 ---
 
@@ -812,9 +884,9 @@ NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
 **Configuration:**
 - **Framework Preset:** Next.js (auto-detected)
 - **Root Directory:** `frontend`
-- **Build Command:** `pnpm build` (default)
+- **Build Command:** `npm run build`
 - **Output Directory:** `.next` (default)
-- **Install Command:** `pnpm install`
+- **Install Command:** `npm install`
 
 **Live URL:** `https://vettan-ai.vercel.app`
 
@@ -831,15 +903,13 @@ NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
 # 4. Language: Python 3
 # 5. Branch: main
 # 6. Build Command: pip install -r requirements.txt
-# 7. Start Command: gunicorn main:app --bind 0.0.0.0:$PORT
+# 7. Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
 **Environment Variables (Render dashboard):**
 ```bash
 OPENAI_API_KEY=sk-proj-...
 TAVILY_API_KEY=tvly-...
-OPENAI_MODEL=gpt-4o-mini
-MAX_ITERATIONS=10
 SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_KEY=eyJhbGc...
 
@@ -858,7 +928,7 @@ web: uvicorn main:app --host 0.0.0.0 --port $PORT
 
 `runtime.txt`:
 ```
-python-3.11
+python-3.11.6
 ```
 
 **Live API:** `https://vettan-ai.onrender.com`
@@ -882,6 +952,8 @@ python-3.11
 ```bash
 # Development
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 # Production (set in Vercel)
 NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
@@ -892,8 +964,6 @@ NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
 # AI Services
 OPENAI_API_KEY=sk-proj-...
 TAVILY_API_KEY=tvly-...
-OPENAI_MODEL=gpt-4o-mini
-MAX_ITERATIONS=10
 
 # Database (Supabase)
 SUPABASE_URL=https://your-project.supabase.co
@@ -967,13 +1037,11 @@ WEB_CONCURRENCY=1               # uvicorn workers; only raise with REDIS_URL set
 - [x] Complete keyboard navigation and accessibility
 - [x] Mobile-responsive sidebar with overlay pattern
 
-See [ROADMAP.md](docs/ROADMAP.md) for detailed timeline and feature specifications.
-
 ---
 
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting PRs.
+Contributions are welcome. Open an issue to discuss larger changes before submitting a PR.
 
 ### Development Workflow
 ```bash
@@ -992,11 +1060,14 @@ git checkout -b feature/your-feature-name
 # - Follow existing code style
 
 # 5. Test your changes
-cd frontend && pnpm tsc --noEmit         # Frontend typecheck
+(cd frontend && npx tsc --noEmit && npm test)    # Typecheck + Vitest
 cd backend && pip install -r requirements-dev.txt
-cd backend && python tests/test_isolation.py   # Tenant isolation + schema readiness
-cd backend && python tests/test_rate_limit.py  # Rate limiting
-# Both backend suites are standalone scripts, not pytest — run them directly.
+python tests/test_isolation.py     # Tenant isolation + schema readiness
+python tests/test_rate_limit.py    # Rate limiting
+python tests/test_spend_guard.py   # Spend caps
+python tests/test_moderation.py    # Moderation
+# The backend suites are standalone scripts, not pytest — run them directly.
+# CI runs all of the above on every push (.github/workflows/ci.yml).
 
 # 6. Commit with conventional commits
 git commit -m "feat: add amazing feature"
@@ -1013,12 +1084,11 @@ git push origin feature/your-feature-name
 
 ### Code Quality Standards
 
-- **TypeScript:** Strict mode enabled, no implicit `any` types
-- **Python:** Type hints, PEP 8 compliance, docstrings
-- **Testing:** Maintain >80% code coverage
-- **Linting:** ESLint (frontend), Ruff (backend)
-- **Formatting:** Prettier (frontend), Black (backend)
-- **Commits:** Conventional Commits for semantic versioning
+- **TypeScript:** Strict mode, checked in CI with `tsc --noEmit`
+- **Python:** Type hints and docstrings
+- **Testing:** New behaviour ships with a regression test; CI must pass
+- **Security:** Dependency audit and secret scan run in CI
+- **Commits:** Conventional Commits
 - **Documentation:** Update docs with code changes
 
 ---
@@ -1042,7 +1112,6 @@ Built with exceptional open-source tools and services:
 - [Next.js](https://nextjs.org/) - The React Framework for Production
 - [React](https://react.dev/) - JavaScript Library for User Interfaces
 - [FastAPI](https://fastapi.tiangolo.com/) - Modern Python Web Framework
-- [LangChain](https://langchain.com/) - Framework for LLM Applications
 - [Tailwind CSS](https://tailwindcss.com/) - Utility-First CSS Framework
 
 ### AI & Data Services
