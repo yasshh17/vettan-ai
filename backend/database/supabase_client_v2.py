@@ -1,7 +1,9 @@
 """Supabase data layer: sessions, messages and the per-user cache."""
 
 from supabase import create_client, Client
-from supabase.lib.client_options import ClientOptions
+# The top-level export: since 2.32, supabase.lib.client_options.ClientOptions is a base
+# class without `storage`, and passing it makes create_client() raise.
+from supabase import ClientOptions
 import os
 import hashlib
 import threading
