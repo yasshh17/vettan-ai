@@ -35,3 +35,22 @@ export function validatePasswordConfirmation(password: string, confirm: string):
   if (password !== confirm) return "Passwords do not match."
   return null
 }
+
+export function validateDateOfBirth(dob: string): string | null {
+  if (!dob) return "Date of birth is required."
+
+  const parsed = new Date(`${dob}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return "Enter a valid date of birth."
+
+  const today = new Date()
+  if (parsed.getTime() > today.getTime()) return "Date of birth can't be in the future."
+
+  let age = today.getFullYear() - parsed.getFullYear()
+  const monthDiff = today.getMonth() - parsed.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < parsed.getDate())) {
+    age--
+  }
+
+  if (age < 18) return "You must be at least 18 years old to sign up."
+  return null
+}

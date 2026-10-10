@@ -10,7 +10,7 @@ import sys
 
 # Set to "" rather than deleted: load_dotenv() on import would refill a missing key
 # from backend/.env and connect to the real database.
-for _k in ("SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
+for _k in ("SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "REDIS_URL"):
     os.environ[_k] = ""
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("TAVILY_API_KEY", "test")
@@ -29,15 +29,21 @@ os.environ["RATE_LIMIT_RESEARCH_REFILL_PER_MIN"] = "1"
 os.environ["RATE_LIMIT_IP_CAPACITY"] = "100000"
 # No service-role key, so the spend guard would fail closed. See test_spend_guard.py.
 os.environ["SPEND_GUARD_ENABLED"] = "false"
+# The fake OpenAI key would otherwise send a real moderation call. See test_moderation.py.
+os.environ["MODERATION_ENABLED"] = "false"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio  # noqa: E402
+import json  # noqa: E402
+
+import fakeredis  # noqa: E402
 
 from utils import rate_limit  # noqa: E402
 from utils.rate_limit import (  # noqa: E402
     BucketPolicy,
     InMemoryTokenBucketStore,
+    RedisTokenBucketStore,
     client_ip,
 )
 
@@ -72,69 +78,153 @@ def consume(store, key, policy, cost=1.0):
     return _loop.run_until_complete(store.consume(key, policy, cost))
 
 
-print("\n[1] Token bucket arithmetic")
-
 # 10/min == one token every 6 seconds. Chosen so refill lands on whole numbers.
 TEN_PER_MIN = BucketPolicy(name="research", capacity=10, refill_per_sec=10 / 60)
 
-clock = FakeClock()
-store = InMemoryTokenBucketStore(clock=clock)
 
-d = consume(store, "k", TEN_PER_MIN)
-check("a fresh key starts full", d.allowed and d.remaining == 9, str(d))
+def redis_store(clock, server=None, **kwargs):
+    client = fakeredis.FakeAsyncRedis(server=server or fakeredis.FakeServer())
+    return RedisTokenBucketStore(client, clock=clock, **kwargs)
 
-for _ in range(9):
+
+def bucket_contract(name, make_store):
+    """Run against every store so the Redis version can't drift."""
+    print(f"\n[1] Token bucket arithmetic ({name})")
+
+    clock = FakeClock()
+    store = make_store(clock)
+
     d = consume(store, "k", TEN_PER_MIN)
-check("capacity consecutive requests all allowed", d.allowed and d.remaining == 0, str(d))
+    check("a fresh key starts full", d.allowed and d.remaining == 9, str(d))
 
-d = consume(store, "k", TEN_PER_MIN)
-check("the next one is denied", not d.allowed, str(d))
-check("  remaining is 0", d.remaining == 0, str(d))
-check("  retry_after is exact (6s at 10/min)", d.retry_after == 6, str(d))
-check("  limit reports capacity", d.limit == 10, str(d))
+    for _ in range(9):
+        d = consume(store, "k", TEN_PER_MIN)
+    check("capacity consecutive requests all allowed", d.allowed and d.remaining == 0, str(d))
 
-# A rejected request must not be charged, or a retrying client never recovers.
-for _ in range(50):
-    consume(store, "k", TEN_PER_MIN)
-clock.advance(6.0)
-d = consume(store, "k", TEN_PER_MIN)
-check("a denied request is NOT charged (50 denials, then 1 token's wait)", d.allowed, str(d))
+    d = consume(store, "k", TEN_PER_MIN)
+    check("the next one is denied", not d.allowed, str(d))
+    check("  remaining is 0", d.remaining == 0, str(d))
+    check("  retry_after is exact (6s at 10/min)", d.retry_after == 6, str(d))
+    check("  limit reports capacity", d.limit == 10, str(d))
 
-clock.advance(6.0)
-d = consume(store, "k", TEN_PER_MIN)
-check("refill is linear in elapsed time", d.allowed and d.remaining == 0, str(d))
+    # A rejected request must not be charged, or a retrying client never recovers.
+    for _ in range(50):
+        consume(store, "k", TEN_PER_MIN)
+    clock.advance(6.0)
+    d = consume(store, "k", TEN_PER_MIN)
+    check("a denied request is NOT charged (50 denials, then 1 token's wait)", d.allowed, str(d))
 
-clock.advance(86400)
-d = consume(store, "k", TEN_PER_MIN)
-check("refill clamps at capacity (a day's wait != a day's tokens)",
-      d.remaining == 9, str(d))
+    clock.advance(6.0)
+    d = consume(store, "k", TEN_PER_MIN)
+    check("refill is linear in elapsed time", d.allowed and d.remaining == 0, str(d))
 
-# A clock that moves backwards must stall, not mint.
-before = consume(store, "back", TEN_PER_MIN).remaining
-clock.advance(-3600)
-d = consume(store, "back", TEN_PER_MIN)
-check("a backwards clock mints nothing", d.remaining <= before, str(d))
-clock.advance(3600)
+    clock.advance(86400)
+    d = consume(store, "k", TEN_PER_MIN)
+    check("refill clamps at capacity (a day's wait != a day's tokens)",
+          d.remaining == 9, str(d))
 
-# Weighted cost: one bucket, different charge per endpoint.
-store2 = InMemoryTokenBucketStore(clock=clock)
-d = consume(store2, "w", TEN_PER_MIN, cost=4)
-check("cost=4 draws 4 tokens", d.allowed and d.remaining == 6, str(d))
-d = consume(store2, "w", TEN_PER_MIN, cost=11)
-check("a cost above capacity is denied", not d.allowed, str(d))
-d = consume(store2, "w", TEN_PER_MIN, cost=1)
-check("  and did not drain the bucket", d.allowed and d.remaining == 5, str(d))
+    # A clock that moves backwards must stall, not mint.
+    before = consume(store, "back", TEN_PER_MIN).remaining
+    clock.advance(-3600)
+    d = consume(store, "back", TEN_PER_MIN)
+    check("a backwards clock mints nothing", d.remaining <= before, str(d))
+    clock.advance(3600)
 
-# Keys are independent, including across bucket classes for the same user.
-store3 = InMemoryTokenBucketStore(clock=clock)
-for _ in range(10):
-    consume(store3, "research:alice", TEN_PER_MIN)
-check("exhausting research:alice denies it",
-      not consume(store3, "research:alice", TEN_PER_MIN).allowed)
-check("  research:bob is untouched",
-      consume(store3, "research:bob", TEN_PER_MIN).allowed)
-check("  read:alice is untouched (class is part of the key)",
-      consume(store3, "read:alice", TEN_PER_MIN).allowed)
+    # Fractional tokens have to survive the trip through Redis.
+    half = BucketPolicy(name="half", capacity=2, refill_per_sec=0.5)
+    consume(store, "frac", half, cost=2)
+    clock.advance(1.0)
+    d = consume(store, "frac", half, cost=0.5)
+    check("a half token refilled pays for a half-cost request", d.allowed, str(d))
+
+    # Weighted cost: one bucket, different charge per endpoint.
+    store2 = make_store(clock)
+    d = consume(store2, "w", TEN_PER_MIN, cost=4)
+    check("cost=4 draws 4 tokens", d.allowed and d.remaining == 6, str(d))
+    d = consume(store2, "w", TEN_PER_MIN, cost=11)
+    check("a cost above capacity is denied", not d.allowed, str(d))
+    d = consume(store2, "w", TEN_PER_MIN, cost=1)
+    check("  and did not drain the bucket", d.allowed and d.remaining == 5, str(d))
+
+    # Keys are independent, including across bucket classes for the same user.
+    store3 = make_store(clock)
+    for _ in range(10):
+        consume(store3, "research:alice", TEN_PER_MIN)
+    check("exhausting research:alice denies it",
+          not consume(store3, "research:alice", TEN_PER_MIN).allowed)
+    check("  research:bob is untouched",
+          consume(store3, "research:bob", TEN_PER_MIN).allowed)
+    check("  read:alice is untouched (class is part of the key)",
+          consume(store3, "read:alice", TEN_PER_MIN).allowed)
+
+
+bucket_contract("in-memory", lambda clock: InMemoryTokenBucketStore(clock=clock))
+bucket_contract("Redis", redis_store)
+
+clock = FakeClock()
+
+print("\n[1b] Redis-only behaviour")
+
+# Compare whole Decisions, not just allowed/remaining.
+HALF = BucketPolicy(name="half", capacity=3, refill_per_sec=0.5)
+# (1.2, 0.1) leaves 0.7 tokens: a truncated reply would report reset 6s, not 5s.
+steps = [(0, 2), (1.0, 0.5), (0.4, 1), (0, 3), (1.2, 0.1), (2.5, 0.25), (7.0, 1)]
+mem_clock, red_clock = FakeClock(), FakeClock()
+mem, red = InMemoryTokenBucketStore(clock=mem_clock), redis_store(red_clock)
+mismatches = []
+for wait, cost in steps:
+    mem_clock.advance(wait)
+    red_clock.advance(wait)
+    a, b = consume(mem, "f", HALF, cost), consume(red, "f", HALF, cost)
+    if a != b:
+        mismatches.append((a, b))
+check("Redis decisions equal in-memory ones over fractional costs and waits",
+      not mismatches, str(mismatches[:1]))
+
+# Two workers on one Redis must share a bucket.
+shared = fakeredis.FakeServer()
+worker_a = redis_store(clock, server=shared)
+worker_b = redis_store(clock, server=shared)
+allowed = sum(
+    consume(w, "research:alice", TEN_PER_MIN).allowed
+    for _ in range(10)
+    for w in (worker_a, worker_b)
+)
+check(f"two workers sharing Redis allow capacity in total, not per worker -> {allowed}",
+      allowed == 10, str(allowed))
+
+# Expiry replaces the sweep, so idle keys can't pile up.
+ttl_client = fakeredis.FakeAsyncRedis(server=fakeredis.FakeServer())
+ttl_store = RedisTokenBucketStore(ttl_client, clock=clock)
+consume(ttl_store, "idle", TEN_PER_MIN)
+pttl = _loop.run_until_complete(ttl_client.pttl("rl:idle"))
+check(f"a bucket key expires about seconds_to_full after its last use -> {pttl}ms",
+      0 < pttl <= TEN_PER_MIN.seconds_to_full * 1000 + 1000, str(pttl))
+
+# No test clock, so Redis TIME is used.
+redis_clock_store = RedisTokenBucketStore(fakeredis.FakeAsyncRedis(server=fakeredis.FakeServer()))
+d = consume(redis_clock_store, "k", TEN_PER_MIN)
+d = consume(redis_clock_store, "k", TEN_PER_MIN)
+check("with no test clock, the Redis TIME clock drives refill", d.allowed and d.remaining == 8, str(d))
+
+# Redis down: still limited, just per process.
+down = fakeredis.FakeServer()
+down.connected = False
+down_store = redis_store(clock, server=down)
+codes = [consume(down_store, "research:alice", TEN_PER_MIN).allowed for _ in range(11)]
+check(f"with Redis down the fallback still limits -> {codes.count(True)} of 11 allowed",
+      codes.count(True) == 10 and codes[-1] is False, str(codes))
+
+check("a failure stops Redis being tried for a while", rate_limit._redis_skipped())
+probe_client = fakeredis.FakeAsyncRedis(server=fakeredis.FakeServer())
+probe = RedisTokenBucketStore(probe_client, clock=clock)
+consume(probe, "probe", TEN_PER_MIN)
+check("  so a healthy store isn't even called meanwhile",
+      _loop.run_until_complete(probe_client.dbsize()) == 0)
+rate_limit._redis_retry_at = 0.0
+consume(probe, "probe", TEN_PER_MIN)
+check("  and Redis is used again once the window passes",
+      _loop.run_until_complete(probe_client.dbsize()) == 1)
 
 # Eviction is lossless: a full bucket behaves the same as a missing one.
 evict_clock = FakeClock()
@@ -157,6 +247,11 @@ kill_store = InMemoryTokenBucketStore(clock=clock)
 allowed_while_off = all(consume(kill_store, "off", TEN_PER_MIN).allowed for _ in range(50))
 check("RATE_LIMIT_ENABLED=false allows everything", allowed_while_off)
 check("  and never records a key", kill_store.tracked_keys() == 0)
+kill_client = fakeredis.FakeAsyncRedis(server=fakeredis.FakeServer())
+kill_redis = RedisTokenBucketStore(kill_client, clock=clock)
+allowed_while_off = all(consume(kill_redis, "off", TEN_PER_MIN).allowed for _ in range(50))
+check("  the Redis store honours it too", allowed_while_off)
+check("  and never touches Redis", _loop.run_until_complete(kill_client.dbsize()) == 0)
 rate_limit.ENABLED = True
 
 
@@ -441,29 +536,99 @@ check(f"RATE_LIMIT_ENABLED=false bypasses the middleware -> {set(off)}", set(off
 rate_limit.ENABLED = True
 
 
-from utils.rate_limit import ConcurrencySlots  # noqa: E402
+from utils.rate_limit import ConcurrencySlots, RedisConcurrencySlots  # noqa: E402
 
-print("\n[5] Concurrency slots")
+slot_loop = asyncio.new_event_loop()
+run = slot_loop.run_until_complete
 
-slots = ConcurrencySlots(per_key=2, total=3)
-check("the first acquire succeeds", slots.try_acquire("alice"))
-check("the second succeeds", slots.try_acquire("alice"))
-check("the third is refused (per-user cap)", not slots.try_acquire("alice"))
-check("another user still gets a slot", slots.try_acquire("bob"))
-check("  but the global cap then bites", not slots.try_acquire("carol"))
 
-slots.release("alice")
-check("releasing frees a slot", slots.try_acquire("alice"))
-slots.release("alice")
-slots.release("alice")
-slots.release("bob")
-check("everything is handed back", slots.in_flight() == 0, str(slots.in_flight()))
+async def settle(slots):
+    """Wait for release()'s background ZREMs."""
+    pending = getattr(slots, "_pending", None)
+    if pending:
+        await asyncio.gather(*list(pending))
 
-# Over-releasing must not drive the counter negative and raise the cap.
-slots.release("nobody")
-check("an unmatched release does not go negative", slots.in_flight() == 0, str(slots.in_flight()))
-check("  and capacity is unchanged", slots.try_acquire("dave") and slots.in_flight() == 1)
-slots.release("dave")
+
+def slot_contract(name, slots):
+    print(f"\n[5] Concurrency slots ({name})")
+
+    async def scenario():
+        check("the first acquire succeeds", await slots.try_acquire("alice"))
+        check("the second succeeds", await slots.try_acquire("alice"))
+        check("the third is refused (per-user cap)", not await slots.try_acquire("alice"))
+        check("another user still gets a slot", await slots.try_acquire("bob"))
+        check("  but the global cap then bites", not await slots.try_acquire("carol"))
+
+        slots.release("alice")
+        await settle(slots)
+        check("releasing frees a slot", await slots.try_acquire("alice"))
+        slots.release("alice")
+        slots.release("alice")
+        slots.release("bob")
+        await settle(slots)
+        check("everything is handed back", slots.in_flight() == 0, str(slots.in_flight()))
+
+        # Over-releasing must not drive the counter negative and raise the cap.
+        slots.release("nobody")
+        check("an unmatched release does not go negative", slots.in_flight() == 0, str(slots.in_flight()))
+        check("  and capacity is unchanged", await slots.try_acquire("dave") and slots.in_flight() == 1)
+        slots.release("dave")
+        await settle(slots)
+
+    run(scenario())
+
+
+slot_contract("in-memory", ConcurrencySlots(per_key=2, total=3))
+slot_contract("Redis", RedisConcurrencySlots(
+    fakeredis.FakeAsyncRedis(server=fakeredis.FakeServer()), per_key=2, total=3
+))
+
+print("\n[5b] Redis concurrency slots across workers")
+
+
+async def cross_worker():
+    server = fakeredis.FakeServer()
+    now = [1_000_000.0]
+    a = RedisConcurrencySlots(fakeredis.FakeAsyncRedis(server=server), per_key=2, total=10,
+                              lease_seconds=120, clock_ms=lambda: now[0])
+    b = RedisConcurrencySlots(fakeredis.FakeAsyncRedis(server=server), per_key=2, total=10,
+                              lease_seconds=120, clock_ms=lambda: now[0])
+
+    check("worker A takes alice's first slot", await a.try_acquire("alice"))
+    check("worker B takes alice's second slot", await b.try_acquire("alice"))
+    check("the per-user cap holds across workers", not await a.try_acquire("alice"))
+    check("  on either worker", not await b.try_acquire("alice"))
+    check("  and a refusal doesn't hold a local slot", a.in_flight() == 1 and b.in_flight() == 1)
+
+    b.release("alice")
+    await settle(b)
+    check("a release on B frees a slot that A can take", await a.try_acquire("alice"))
+
+    # Crashed worker: no release, the lease just runs out.
+    now[0] += 121_000
+    check("an expired lease frees its slot", await b.try_acquire("alice"))
+
+    # The global cap is per process.
+    full = RedisConcurrencySlots(fakeredis.FakeAsyncRedis(server=server), per_key=5, total=1)
+    other = RedisConcurrencySlots(fakeredis.FakeAsyncRedis(server=server), per_key=5, total=1)
+    check("worker C fills its own bulkhead", await full.try_acquire("dan"))
+    check("  then refuses locally", not await full.try_acquire("erin"))
+    check("  while worker D still serves", await other.try_acquire("erin"))
+
+    down = fakeredis.FakeServer()
+    down.connected = False
+    offline = RedisConcurrencySlots(fakeredis.FakeAsyncRedis(server=down), per_key=1, total=5)
+    check("with Redis down the per-process fallback grants a slot", await offline.try_acquire("alice"))
+    check("  and still enforces the per-user cap", not await offline.try_acquire("alice"))
+    offline.release("alice")
+    await settle(offline)
+    check("  and gives it back", offline.in_flight() == 0 and await offline.try_acquire("alice"))
+    offline.release("alice")
+    await settle(offline)
+    rate_limit._redis_retry_at = 0.0
+
+run(cross_worker())
+slot_loop.close()
 
 # Over HTTP: the cap rejects with 429 rather than queueing.
 reset_buckets()
@@ -483,6 +648,38 @@ r = client.post("/api/research", json={"query": "hi"})
 check("slots are released after a completed request",
       r.status_code == 200 and main._research_slots.in_flight() == 0,
       f"{r.status_code}, in_flight={main._research_slots.in_flight()}")
+
+
+print("\n[6] Saves finish before the response")
+
+# The next request may land on another worker, so the save has to be done by the
+# time we respond.
+saves = []
+main._persist_new_session = lambda db, session_id, *a, **k: saves.append(session_id)
+
+
+async def _fake_research_stream(query):
+    yield {"type": "token", "text": "stub"}
+    yield {"type": "final", "output": "stub answer " * 20, "citations": [], "metadata": {}}
+
+
+main.research_stream = _fake_research_stream
+
+reset_buckets()
+as_user(ALICE)
+r = client.post("/api/research", json={"query": "save me", "use_cache": False})
+sid = r.json().get("session_id")
+check("/api/research has saved the session by the time it responds",
+      r.status_code == 200 and sid in saves, f"{r.status_code}, {saves}")
+
+reset_buckets()
+with client.stream("POST", "/api/research/stream", json={"query": "save me too", "use_cache": False}) as s:
+    body = "".join(s.iter_text())
+done_line = next((ln for ln in body.splitlines() if ln.startswith("data:") and "session_id" in ln), "")
+streamed_sid = done_line and json.loads(done_line[5:])["session_id"]
+check("the stream has saved the session by the time it closes",
+      bool(streamed_sid) and streamed_sid in saves, f"{streamed_sid}, {saves}")
+check("no in-process pending-save registry remains", not hasattr(main, "_pending_saves"))
 
 main.app.dependency_overrides.clear()
 

@@ -17,6 +17,8 @@ os.environ.setdefault("TAVILY_API_KEY", "test")
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 # Otherwise the spend guard's own 503 would mask the schema-readiness 503s checked below.
 os.environ["SPEND_GUARD_ENABLED"] = "false"
+# The fake OpenAI key would otherwise send a real moderation call. See test_moderation.py.
+os.environ["MODERATION_ENABLED"] = "false"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

@@ -7,17 +7,25 @@ import { Loader2, MailCheck } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
-import { validateEmail, validateName, validatePassword } from "@/components/auth/validation"
+import { SignUpConsent } from "@/components/legal/legal-links"
+import {
+  validateDateOfBirth,
+  validateEmail,
+  validateName,
+  validatePassword,
+} from "@/components/auth/validation"
 
 export function SignUpForm() {
   const router = useRouter()
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [dateOfBirth, setDateOfBirth] = useState("")
   const [errors, setErrors] = useState<{
     fullName?: string | null
     email?: string | null
     password?: string | null
+    dateOfBirth?: string | null
   }>({})
   const [formError, setFormError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -28,8 +36,14 @@ export function SignUpForm() {
     const nameError = validateName(fullName)
     const emailError = validateEmail(email)
     const passwordError = validatePassword(password)
-    if (nameError || emailError || passwordError) {
-      setErrors({ fullName: nameError, email: emailError, password: passwordError })
+    const dobError = validateDateOfBirth(dateOfBirth)
+    if (nameError || emailError || passwordError || dobError) {
+      setErrors({
+        fullName: nameError,
+        email: emailError,
+        password: passwordError,
+        dateOfBirth: dobError,
+      })
       return
     }
     setErrors({})
@@ -42,7 +56,7 @@ export function SignUpForm() {
         email: email.trim(),
         password,
         options: {
-          data: { full_name: fullName.trim() },
+          data: { full_name: fullName.trim(), date_of_birth: dateOfBirth },
           emailRedirectTo: `${window.location.origin}/auth/callback?next=/app`,
         },
       })
@@ -116,6 +130,17 @@ export function SignUpForm() {
           />
 
           <AuthField
+            id="dateOfBirth"
+            label="Date of birth"
+            type="date"
+            autoComplete="bday"
+            max={new Date().toISOString().slice(0, 10)}
+            value={dateOfBirth}
+            onChange={(e) => setDateOfBirth(e.target.value)}
+            error={errors.dateOfBirth}
+          />
+
+          <AuthField
             id="email"
             label="Email"
             type="email"
@@ -145,12 +170,9 @@ export function SignUpForm() {
             {loading && <Loader2 className="h-5 w-5 animate-spin" />}
             {loading ? "Creating account…" : "Create account"}
           </button>
+          <SignUpConsent />
         </form>
       </AuthCard>
-
-      <p className="mt-6 text-center text-[13px] leading-relaxed text-[#6B6B78]">
-        By continuing you agree to Vettan&apos;s Terms of Service and Privacy Policy.
-      </p>
     </>
   )
 }

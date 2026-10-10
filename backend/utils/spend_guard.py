@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Optional, Protocol, Tuple
 
 from fastapi import HTTPException
 
+from utils import audit
 from utils.rate_limit import _env_bool, _env_float
 
 logger = logging.getLogger(__name__)
@@ -232,6 +233,11 @@ def _maybe_alert(global_spent_micros: int) -> None:
         if _alerted_day == today:
             return
         _alerted_day = today
+    audit.record(
+        "spend_alert",
+        global_spent_usd=round(global_spent_micros / 1_000_000, 4),
+        budget_usd=GLOBAL_DAILY_BUDGET_USD,
+    )
     logger.error(
         "Global spend at $%.2f of the $%.2f daily budget (%.0f%%). Research pauses for "
         "everyone when it is reached. Raise GLOBAL_DAILY_BUDGET_USD if this is real traffic.",
@@ -277,10 +283,10 @@ async def charge(
     if decision.allowed:
         return Reservation(user_id=user_id, kind=kind, cost_micros=cost, units=units)
 
+    audit.record("spend_cap_hit", user_id=user_id, kind=kind, scope=decision.reason or "global")
     wait = seconds_until_utc_midnight()
     headers = {"Retry-After": str(wait), MARKER_HEADER: decision.reason or "global"}
     if decision.reason == "user":
-        logger.info("Daily budget reached for user %s (%s)", user_id[:8], kind)
         raise HTTPException(
             status_code=429,
             detail=f"You've reached today's usage limit. It resets in {format_wait(wait)}.",

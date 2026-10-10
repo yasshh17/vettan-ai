@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { AlertTriangle, Loader2 } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
 
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
+import { LegalLinkRow } from "@/components/legal/legal-links"
 import {
   Dialog,
   DialogContent,
@@ -295,6 +297,17 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
             <AlertDescription className="text-red-300/90">
               This permanently deletes your Vettan account and signs you out everywhere.
               This can&apos;t be undone.
+              <span className="mt-2 block text-red-200/80">
+                Your conversations and usage records are erased immediately.{" "}
+                <Link
+                  href="/privacy#7-how-long-we-keep-information"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-red-100 underline decoration-red-200/40 underline-offset-2 hover:text-white"
+                >
+                  What we delete
+                </Link>
+              </span>
             </AlertDescription>
           </Alert>
 
@@ -344,6 +357,11 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
               </div>
             </div>
           )}
+        </div>
+
+        <div className="mt-8 flex items-center justify-between gap-3 border-t border-neutral-800 pt-4 text-[13px]">
+          <span className="text-neutral-500">Legal</span>
+          <LegalLinkRow newTab linkClassName="text-neutral-400 transition-colors hover:text-neutral-100" />
         </div>
       </DialogContent>
     </Dialog>

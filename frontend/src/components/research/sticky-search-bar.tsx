@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from "react"
 import { ArrowUp, Square, Mic, AudioWaveform } from "lucide-react"
 import { refreshHistory, confirmSessionSaved } from "@/lib/api"
-import { authPost, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
+import { authPost, ContentBlockedError, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
 import { streamResearch, type StreamEvent } from "@/lib/research-stream"
 import { useToast } from "@/hooks/use-toast"
+import { isSupportMessage } from "@/components/research/refusal-banner"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -31,6 +32,12 @@ interface StickySearchBarProps {
    * remounts the hero bar, so setQuery() on the old instance would be lost.
    */
   pendingQueryRef?: React.MutableRefObject<string | null>
+  /**
+   * A rejected query re-delivered by the page to whichever instance is mounted now: a
+   * first query's hero bar is replaced by the docked bar before the refusal arrives.
+   */
+  restoredQuery?: { text: string; id: number } | null
+  onRestoreQuery?: (text: string) => void
 }
 
 export function StickySearchBar({
@@ -42,7 +49,9 @@ export function StickySearchBar({
   currentSessionId,
   onStreamEvent,
   abortRef,
-  pendingQueryRef
+  pendingQueryRef,
+  restoredQuery,
+  onRestoreQuery
 }: StickySearchBarProps) {
   const { toast } = useToast()
   // Read only; clearing here would break under StrictMode's double-invoked initializer.
@@ -62,6 +71,18 @@ export function StickySearchBar({
     if (pendingQueryRef) pendingQueryRef.current = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (restoredQuery) setQuery(restoredQuery.text)
+  }, [restoredQuery])
+
+  // Puts a rejected query back so it can be edited and resent.
+  const restoreQuery = (text: string, isFollowUp: boolean) => {
+    setQuery(text)
+    // Only a first query remounts; follow-ups keep this instance.
+    if (!isFollowUp && pendingQueryRef) pendingQueryRef.current = text
+    onRestoreQuery?.(text)
+  }
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -141,6 +162,8 @@ export function StickySearchBar({
       let newSessionId: string | null = null
 
       for await (const event of streamResearch(payload, controller.signal)) {
+        // Reported once, from the catch below, the same way as a blocked query.
+        if (event.type === "blocked") throw new ContentBlockedError(event.message, "output")
         onStreamEvent?.(event, context)
 
         if (event.type === "done") {
@@ -172,13 +195,16 @@ export function StickySearchBar({
     } catch (err) {
       if (controller.signal.aborted) {
         onStreamEvent?.({ type: "aborted" }, context)
+      } else if (err instanceof ContentBlockedError) {
+        // No fallback: /api/research would refuse it too, after paying for the answer again.
+        onStreamEvent?.({ type: "blocked", message: err.message }, context)
+        // Don't put self-harm messages back in the box.
+        if (!isSupportMessage(err.message)) restoreQuery(submitted, isFollowUp)
       } else if (err instanceof RateLimitedError) {
         // No fallback to /api/research: same bucket, and it would spend a second request.
         onStreamEvent?.({ type: "error", message: err.message }, context)
         toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
-        setQuery(submitted)
-        // Only a first query remounts; follow-ups keep this instance.
-        if (!isFollowUp && pendingQueryRef) pendingQueryRef.current = submitted
+        restoreQuery(submitted, isFollowUp)
       } else {
         console.error("Streaming failed, falling back to /api/research:", err)
         await runWithoutStreaming(payload, context, err)
@@ -213,12 +239,14 @@ export function StickySearchBar({
       refreshHistory()
     } catch (err) {
       console.error("Research failed:", err)
-      // A rate limit is the clearer message; otherwise report the original stream error.
-      if (err instanceof RateLimitedError) {
+      // A refusal is the clearer message; otherwise report the original stream error.
+      if (err instanceof ContentBlockedError) {
+        onStreamEvent?.({ type: "blocked", message: err.message }, context)
+        if (!isSupportMessage(err.message)) restoreQuery(context.query, context.isFollowUp)
+      } else if (err instanceof RateLimitedError) {
         onStreamEvent?.({ type: "error", message: err.message }, context)
         toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
-        setQuery(context.query)
-        if (!context.isFollowUp && pendingQueryRef) pendingQueryRef.current = context.query
+        restoreQuery(context.query, context.isFollowUp)
       } else {
         const message =
           streamError instanceof Error && streamError.message
