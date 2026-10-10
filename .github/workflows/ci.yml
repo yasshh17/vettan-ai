@@ -72,6 +72,9 @@ jobs:
         # No credentials on purpose: the suites must pass with no external services.
         run: python tests/test_isolation.py
 
+      - name: Scoped database client tests
+        run: python tests/test_scoped_db.py
+
       - name: Rate limiter tests
         run: python tests/test_rate_limit.py
 
