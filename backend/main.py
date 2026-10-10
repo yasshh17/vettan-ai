@@ -110,7 +110,10 @@ async def lifespan(app: FastAPI):
         )
     # Connect at startup so the first request doesn't pay for it.
     await asyncio.to_thread(get_database_v2)
+    # In the background: a slow or down OpenAI shouldn't hold up boot.
+    warm_up = asyncio.create_task(moderation.warm_up())
     yield
+    warm_up.cancel()
     if _redis is not None:
         await _redis.aclose()
 

@@ -111,16 +111,64 @@ check("MODERATION_ENABLED=false skips the call",
 moderation.ENABLED = True
 
 moderation._moderate = _down
-check("API error fails open by default", not run(moderation.check("x", "input")).flagged)
-moderation.FAIL_CLOSED = True
 v = run(moderation.check("x", "input"))
-check("API error with MODERATION_FAIL_CLOSED=true is flagged unavailable", v.flagged and v.unavailable)
-moderation.FAIL_CLOSED = False
+check("API down: a question is refused as unavailable", v.flagged and v.unavailable)
+v = run(moderation.check("x", "audio"))
+check("API down: audio text is refused as unavailable", v.flagged and v.unavailable)
+check("API down: an answer is let through", not run(moderation.check("x", "output")).flagged)
 
 moderation._moderate = _slow
 moderation.TIMEOUT_S = 0.05
-check("timeout fails open", not run(moderation.check("x", "input")).flagged)
+v = run(moderation.check("x", "input"))
+check("timeout: a question is refused as unavailable", v.flagged and v.unavailable)
+check("timeout: an answer is let through", not run(moderation.check("x", "output")).flagged)
 moderation.TIMEOUT_S = 3.0
+
+# REGRESSION: in production a threat was researched because the first call after a
+# restart timed out on a cold connection and the check failed open.
+calls_made = []
+
+
+async def _cold_then_warm(text):
+    calls_made.append(text)
+    if len(calls_made) == 1:
+        raise asyncio.TimeoutError()
+    return await _fake_moderate(text)
+
+
+moderation._moderate = _cold_then_warm
+v = run(moderation.check("THREAT q", "input"))
+check("REGRESSION: a cold first attempt is retried and the threat is still blocked",
+      v.flagged and not v.unavailable and len(calls_made) == 2)
+
+calls_made.clear()
+moderation._moderate = _down
+moderation.ATTEMPTS = 1
+run(moderation.check("x", "input"))
+moderation._moderate = _cold_then_warm
+calls_made.clear()
+v = run(moderation.check("THREAT q", "input"))
+check("MODERATION_ATTEMPTS=1 doesn't retry", v.unavailable and len(calls_made) == 1)
+moderation.ATTEMPTS = 2
+
+moderation._moderate = _down
+moderation.FAIL_CLOSED_SOURCES = frozenset()
+check("MODERATION_FAIL_CLOSED=false lets a question through", not run(moderation.check("x", "input")).flagged)
+moderation.FAIL_CLOSED_SOURCES = moderation._fail_closed_sources("true")
+check("MODERATION_FAIL_CLOSED=true also refuses an answer", run(moderation.check("x", "output")).unavailable)
+moderation.FAIL_CLOSED_SOURCES = moderation._fail_closed_sources("input,audio")
+
+parse = moderation._fail_closed_sources
+check("MODERATION_FAIL_CLOSED parsing: true / false / list / default",
+      parse("true") == {"input", "output", "audio"} and parse("false") == frozenset()
+      and parse(" Input ") == {"input"} and parse("input,audio") == {"input", "audio"})
+
+try:
+    run(moderation.warm_up())
+    warm_ok = True
+except Exception:
+    warm_ok = False
+check("warm_up() with the API down returns without raising", warm_ok)
 moderation._moderate = _fake_moderate
 
 
@@ -323,14 +371,21 @@ check(f"/api/audio: clean text -> 200 -> {r.status_code}", r.status_code == 200 
 
 store = reset()
 moderation._moderate = _down
-moderation.FAIL_CLOSED = True
 r = client.post("/api/research/stream", json={"query": "fine query"})
-check(f"fail closed: stream -> 503 marked unavailable -> {r.status_code}",
+check(f"moderation down: stream -> 503 marked unavailable, nothing run or charged -> {r.status_code}",
       r.status_code == 503 and r.headers.get(moderation.MARKER_HEADER) == "unavailable"
-      and calls["research"] == 0)
-moderation.FAIL_CLOSED = False
+      and calls["research"] == 0 and store.user_spent(ALICE) == 0)
+
+store = reset()
+r = client.post("/api/audio", json={"text": "fine text"})
+check(f"moderation down: audio -> 503, no TTS, no charge -> {r.status_code}",
+      r.status_code == 503 and calls["tts"] == 0 and store.user_spent(ALICE) == 0)
+
+store = reset()
+moderation.FAIL_CLOSED_SOURCES = frozenset()
 r = client.post("/api/research/stream", json={"query": "fine query"})
-check(f"fail open: stream still answers -> {events(r.text)}", events(r.text)[-1] == "done")
+check(f"MODERATION_FAIL_CLOSED=false: stream still answers -> {events(r.text)}", events(r.text)[-1] == "done")
+moderation.FAIL_CLOSED_SOURCES = moderation._fail_closed_sources("input,audio")
 moderation._moderate = _fake_moderate
 
 main.app.dependency_overrides.clear()

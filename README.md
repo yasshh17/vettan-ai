@@ -210,7 +210,7 @@ sequenceDiagram
 |---|---|---|
 | Edge | Per-IP token bucket, shared across workers via Redis | `backend/utils/rate_limit.py`, `rate_limit_http.py` |
 | Identity | Supabase JWT on every API call; per-user buckets per endpoint class | `backend/main.py` |
-| Content | OpenAI moderation on input (before any paid work) and on output | `backend/utils/moderation.py` |
+| Content | OpenAI moderation on input (before any paid work) and on output. If moderation can't run, questions and audio are refused rather than let through | `backend/utils/moderation.py` |
 | Cost | Atomic daily spend reservation per user and globally, refunded on failure | `backend/utils/spend_guard.py`, `supabase/migrations/0006_spend_guard.sql` |
 | Data | Row-level security; backend queries with the caller's JWT, never an unscoped client | `supabase/migrations/0003_enable_rls.sql`, `backend/database/` |
 | Detect | Refused requests (429, 401, moderation, spend cap, in-flight cap) and account deletions log a `[Security]` line. IPs are hashed and query text is never logged | `backend/utils/audit.py` |
@@ -1012,6 +1012,11 @@ REDIS_TIMEOUT_SECONDS=0.25
 REDIS_RETRY_AFTER_SECONDS=5
 REDIS_MAX_CONNECTIONS=10        # per worker; workers x instances x this must fit the plan
 WEB_CONCURRENCY=1               # uvicorn workers; only raise with REDIS_URL set
+
+# ── Moderation ───────────────────────────────────────────────────────────
+MODERATION_TIMEOUT_S=3          # per attempt
+MODERATION_ATTEMPTS=2           # a cold connection after a restart gets one retry
+MODERATION_FAIL_CLOSED=input,audio   # sources refused when moderation can't run; true = all, false = none
 
 # ── Security log ─────────────────────────────────────────────────────────
 AUDIT_IP_SALT=change-me         # any random string; used to hash IPs in [Security] logs

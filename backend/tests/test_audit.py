@@ -154,6 +154,20 @@ check("a moderation block is recorded with source and categories",
       verdict.flagged and len(got) == 1 and got[0]["source"] == "output"
       and got[0]["categories"] == verdict.categories, repr(got))
 check("  and the moderated text is never stored", "SECRET QUERY TEXT" not in repr(rows))
+
+
+async def down(text):
+    raise RuntimeError("moderation API down")
+
+
+moderation._moderate = down
+reset()
+asyncio.run(moderation.check("SECRET QUERY TEXT", "input", ALICE))
+asyncio.run(moderation.check("SECRET QUERY TEXT", "output", ALICE))
+got = events("moderation_unavailable")
+check("moderation outages are logged with the source and what happened",
+      [(g["source"], g["action"]) for g in got] == [("input", "refused"), ("output", "allowed")]
+      and "SECRET QUERY TEXT" not in repr(rows), repr(got))
 moderation._moderate = real_moderate
 
 print("\n[spend]")
