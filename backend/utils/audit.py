@@ -15,6 +15,7 @@ EVENTS = frozenset({
     "rate_limited",
     "auth_failed",
     "moderation_blocked",
+    "moderation_unavailable",
     "spend_cap_hit",
     "spend_alert",
     "inflight_rejected",

@@ -1,13 +1,17 @@
 """
 Content moderation for research queries, generated answers and text sent to TTS.
 
-Uses OpenAI's moderation endpoint, which is free. Fails open by default: the same
-provider runs synthesis, so failing closed would only add a second way to go down.
+Uses OpenAI's moderation endpoint, which is free. If the check can't run, questions
+and audio are refused (nothing paid has happened yet, so the cost is one retry) and
+answers are let through (they've already streamed, so blocking only loses the save).
+A cold connection after a restart once let a threat through, hence the retry and the
+warm-up at startup.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, List, Literal, Union
@@ -15,7 +19,7 @@ from typing import Dict, FrozenSet, List, Literal, Union
 from fastapi import HTTPException
 
 from utils import audit
-from utils.rate_limit import _env_bool, _env_float
+from utils.rate_limit import _env_bool, _env_float, _env_int
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +27,23 @@ logger = logging.getLogger(__name__)
 # check() reads these at call time so tests can override them.
 ENABLED: bool = _env_bool("MODERATION_ENABLED", True)
 TIMEOUT_S: float = _env_float("MODERATION_TIMEOUT_S", 3.0)
-FAIL_CLOSED: bool = _env_bool("MODERATION_FAIL_CLOSED", False)
+ATTEMPTS: int = max(1, _env_int("MODERATION_ATTEMPTS", 2))
+WARM_UP_TIMEOUT_S = 10.0
+
+
+def _fail_closed_sources(raw: str) -> FrozenSet[str]:
+    # "true" = every source, "false" = none, otherwise a comma list.
+    value = raw.strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return frozenset({"input", "output", "audio"})
+    if value in ("0", "false", "no", "off", ""):
+        return frozenset()
+    return frozenset(s.strip() for s in value.split(",") if s.strip())
+
+
+FAIL_CLOSED_SOURCES: FrozenSet[str] = _fail_closed_sources(
+    os.getenv("MODERATION_FAIL_CLOSED", "input,audio")
+)
 
 MODEL = "omni-moderation-latest"
 
@@ -116,14 +136,25 @@ async def check(text: str, source: Source, user_id: str = "") -> Verdict:
         return CLEAN
 
     started = time.perf_counter()
-    try:
-        raw = await asyncio.wait_for(_moderate(text), timeout=TIMEOUT_S)
-    except Exception as e:
-        if FAIL_CLOSED:
-            logger.error("Moderation unavailable, refusing %s (failing closed): %r", source, e)
-            return Verdict(True, unavailable=True)
-        logger.warning("Moderation unavailable, allowing %s (failing open): %r", source, e)
-        return CLEAN
+    raw = None
+    for attempt in range(ATTEMPTS):
+        try:
+            raw = await asyncio.wait_for(_moderate(text), timeout=TIMEOUT_S)
+            break
+        except Exception as e:
+            error = e
+            if attempt + 1 < ATTEMPTS:
+                logger.info("Moderation attempt %d failed for %s, retrying: %r", attempt + 1, source, e)
+    if raw is None:
+        refuse = source in FAIL_CLOSED_SOURCES
+        audit.record(
+            "moderation_unavailable",
+            user_id=user_id,
+            source=source,
+            action="refused" if refuse else "allowed",
+            error=type(error).__name__,
+        )
+        return Verdict(True, unavailable=True) if refuse else CLEAN
     logger.info(f"[Moderation] {source} {time.perf_counter() - started:.2f}s")
 
     hits = _hits(raw, QUESTION_LIMITS if source == "input" else GENERATED_LIMITS)
@@ -142,6 +173,18 @@ async def check(text: str, source: Source, user_id: str = "") -> Verdict:
         return CLEAN
     audit.record("moderation_blocked", user_id=user_id, source=source, categories=hits)
     return Verdict(True, hits)
+
+
+async def warm_up() -> None:
+    """Open the connection before the first real check. Never raises."""
+    if not ENABLED:
+        return
+    started = time.perf_counter()
+    try:
+        await asyncio.wait_for(_moderate("ok"), timeout=WARM_UP_TIMEOUT_S)
+        logger.info("[Moderation] warmed in %.2fs", time.perf_counter() - started)
+    except Exception as e:
+        logger.warning("[Moderation] warm-up failed: %r", e)
 
 
 def message(source: Source, verdict: Verdict) -> str:
