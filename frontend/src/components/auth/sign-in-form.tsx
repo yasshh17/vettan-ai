@@ -7,7 +7,7 @@ import { Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
-import { validateEmail, validatePassword } from "@/components/auth/validation"
+import { validateEmail, validateSignInPassword } from "@/components/auth/validation"
 
 export function SignInForm({ initialError = "" }: { initialError?: string }) {
   const router = useRouter()
@@ -16,17 +16,35 @@ export function SignInForm({ initialError = "" }: { initialError?: string }) {
   const [errors, setErrors] = useState<{ email?: string | null; password?: string | null }>({})
   const [formError, setFormError] = useState(initialError)
   const [loading, setLoading] = useState(false)
+  const [unconfirmed, setUnconfirmed] = useState(false)
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle")
+
+  const handleResend = async () => {
+    setResendState("sending")
+    try {
+      await createClient().auth.resend({
+        type: "signup",
+        email: email.trim(),
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/app` },
+      })
+    } catch {
+      // Same outcome either way; the user can try again from the form.
+    }
+    setResendState("sent")
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const emailError = validateEmail(email)
-    const passwordError = validatePassword(password)
+    const passwordError = validateSignInPassword(password)
     if (emailError || passwordError) {
       setErrors({ email: emailError, password: passwordError })
       return
     }
     setErrors({})
     setFormError("")
+    setUnconfirmed(false)
+    setResendState("idle")
     setLoading(true)
 
     try {
@@ -35,6 +53,14 @@ export function SignInForm({ initialError = "" }: { initialError?: string }) {
         email: email.trim(),
         password,
       })
+
+      // Supabase only reports email_not_confirmed when the password was right,
+      // so this doesn't reveal anything to someone guessing passwords.
+      if (error?.code === "email_not_confirmed") {
+        setUnconfirmed(true)
+        setLoading(false)
+        return
+      }
 
       if (error) {
         setFormError("Invalid email or password.")
@@ -57,6 +83,24 @@ export function SignInForm({ initialError = "" }: { initialError?: string }) {
           {formError && (
             <div className="rounded-lg border border-[#f87171]/30 bg-[#1e1a1a] px-4 py-3 text-[14px] text-[#f87171]">
               {formError}
+            </div>
+          )}
+
+          {unconfirmed && (
+            <div className="rounded-lg border border-[#9C90FF]/30 bg-[rgba(124,111,240,0.08)] px-4 py-3 text-[14px] text-[#C9C9D4]">
+              Confirm your email before signing in. Check your inbox for the link.{" "}
+              {resendState === "sent" ? (
+                <span className="text-[#EDEDF2]">A new link is on its way.</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resendState === "sending"}
+                  className="font-medium text-[#9C90FF] hover:text-[#B6ACFF] disabled:opacity-70"
+                >
+                  {resendState === "sending" ? "Sending…" : "Resend link"}
+                </button>
+              )}
             </div>
           )}
 

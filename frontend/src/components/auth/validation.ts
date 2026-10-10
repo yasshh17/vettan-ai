@@ -6,9 +6,22 @@ export function validateEmail(email: string): string | null {
   return null
 }
 
+export const MIN_PASSWORD_LENGTH = 8
+
+/** Rules for choosing a password (sign-up, reset). Keep in step with Supabase Auth's password policy. */
 export function validatePassword(password: string): string | null {
   if (!password) return "Password is required."
-  if (password.length < 6) return "Password must be at least 6 characters."
+  if (password.length < MIN_PASSWORD_LENGTH)
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`
+  return null
+}
+
+/**
+ * Sign-in only checks that a password was entered. Applying the length rule
+ * here would lock out accounts created under the older 6-character minimum.
+ */
+export function validateSignInPassword(password: string): string | null {
+  if (!password) return "Password is required."
   return null
 }
 

@@ -242,8 +242,10 @@ class FakeAdmin:
 
 
 main.get_admin_client = lambda: FakeAdmin()
+# Deletion needs the current password; see test_account_delete.py.
+main._password_matches = lambda uid, pw: pw == "right-password"
 reset()
-r = client.delete("/api/account")
+r = client.request("DELETE", "/api/account", json={"password": "right-password"})
 got = events("account_deleted")
 check(f"account deletion is recorded -> {r.status_code}",
       r.status_code == 200 and len(got) == 1 and got[0]["user"] == ALICE[:8])
