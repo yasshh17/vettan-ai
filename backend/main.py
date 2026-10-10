@@ -51,6 +51,8 @@ from utils.rate_limit import (
 from utils.rate_limit_http import RateLimitMiddleware, rate_limited, request_ip, warn_if_multiprocess
 from utils import audit, moderation, spend_guard
 
+logging.getLogger("uvicorn.access").addFilter(audit.RedactClientIP())
+
 # Without Redis, limits are per process, so run a single worker.
 _redis = None
 if os.getenv("REDIS_URL", "").strip():

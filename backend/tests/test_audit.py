@@ -82,6 +82,21 @@ check("IPs are hashed: stable, salted, never the raw address",
       h == audit.hash_ip("203.0.113.7") and "203.0.113.7" not in h and len(h) == 16
       and audit.hash_ip(None) is None)
 
+access = logging.LogRecord("uvicorn.access", logging.INFO, "", 0,
+                           '%s - "%s %s HTTP/%s" %d', ("203.0.113.7:51234", "GET", "/api/history", "1.1", 401), None)
+audit.RedactClientIP().filter(access)
+line = access.getMessage()
+check("access log lines carry the hashed IP, not the raw one",
+      line == f'ip={audit.hash_ip("203.0.113.7")} - "GET /api/history HTTP/1.1" 401' and "203.0.113.7" not in line, line)
+
+ipv6 = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s"', ("2001:db8::1:443", "GET"), None)
+audit.RedactClientIP().filter(ipv6)
+check("an IPv6 client is hashed without its port", ipv6.getMessage() == f'ip={audit.hash_ip("2001:db8::1")} - "GET"', ipv6.getMessage())
+
+other = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, "plain message", None, None)
+check("lines without arguments pass through untouched",
+      audit.RedactClientIP().filter(other) and other.getMessage() == "plain message")
+
 print("\n[rate limits]")
 
 app = FastAPI()
