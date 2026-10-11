@@ -38,11 +38,14 @@ if (rawSupabaseUrl) {
 const SUPABASE_ORIGIN = rawSupabaseUrl
 const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+// React's dev build needs eval() for its debug tooling; production never uses it.
+const isDev = process.env.NODE_ENV === "development"
+
 // 'unsafe-inline' is needed for Next's un-nonced bootstrap scripts. The CSP still
 // blocks loading content from other origins.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
