@@ -5,6 +5,16 @@ const PROTECTED_PREFIXES = ["/app"]
 const AUTH_ROUTES = ["/sign-in", "/sign-up", "/forgot-password"]
 
 export async function updateSession(request: NextRequest) {
+  // Supabase sends email links to the Site URL root when the requested redirect isn't
+  // allowlisted. Hand them to /auth/callback, which exchanges the code or reports the error.
+  const { pathname: path, searchParams } = request.nextUrl
+  if (path === "/" && (searchParams.has("code") || searchParams.has("error_code"))) {
+    const url = request.nextUrl.clone()
+    url.pathname = "/auth/callback"
+    if (!url.searchParams.has("next")) url.searchParams.set("next", "/app")
+    return NextResponse.redirect(url)
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
