@@ -75,6 +75,9 @@ jobs:
       - name: Scoped database client tests
         run: python tests/test_scoped_db.py
 
+      - name: Timestamp tests
+        run: python tests/test_timestamps.py
+
       - name: Rate limiter tests
         run: python tests/test_rate_limit.py
 

@@ -9,7 +9,7 @@ import hashlib
 import threading
 from collections import OrderedDict
 from typing import Optional, Dict, List, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import json
 import uuid
@@ -293,8 +293,8 @@ class VettanDatabaseV2:
                 'citations': clean_citations,
                 'metadata': clean_metadata,
                 'is_favorite': False,
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }
             
             response = self.client.table('research_sessions').insert(data).execute()
@@ -306,7 +306,7 @@ class VettanDatabaseV2:
                 
                 try:
                     if messages is None:
-                        now = datetime.now()
+                        now = datetime.now(timezone.utc)
                         messages = [
                             {
                                 'role': 'user',
@@ -395,7 +395,7 @@ class VettanDatabaseV2:
                 'content': content[:50000],
                 'citations': citations or [],
                 'metadata': metadata or {},
-                'created_at': datetime.now().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat()
             }
             
             response = self.client.table('messages').insert(message_data).execute()
@@ -407,7 +407,7 @@ class VettanDatabaseV2:
                 
                 try:
                     self.client.table('research_sessions').update({
-                        'updated_at': datetime.now().isoformat()
+                        'updated_at': datetime.now(timezone.utc).isoformat()
                     }).eq('id', session_id).eq('user_id', user_id).execute()
                 except Exception as update_err:
                     print(f"⚠️ Failed to update session timestamp (non-critical): {update_err}")
@@ -446,7 +446,7 @@ class VettanDatabaseV2:
             return False
 
         try:
-            now = datetime.now().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             rows = [
                 {
                     'id': msg.get('id') or str(uuid.uuid4()),
@@ -473,7 +473,7 @@ class VettanDatabaseV2:
             if touch_session:
                 try:
                     self.client.table('research_sessions').update({
-                        'updated_at': datetime.now().isoformat()
+                        'updated_at': datetime.now(timezone.utc).isoformat()
                     }).eq('id', session_id).eq('user_id', user_id).execute()
                 except Exception as update_err:
                     print(f"⚠️ Failed to update session timestamp (non-critical): {update_err}")
@@ -663,7 +663,7 @@ class VettanDatabaseV2:
             if not user_id:
                 return False
 
-            update_data['updated_at'] = datetime.now().isoformat()
+            update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
 
             print(f"✏️ Updating session: {session_id[:8]}... with {update_data}")
 

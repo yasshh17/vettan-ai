@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Literal, Optional
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import json
 import math
@@ -275,7 +275,7 @@ def _db_for(user: AuthedUser):
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _sse(event: str, data: Dict[str, Any]) -> str:
