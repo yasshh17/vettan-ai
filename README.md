@@ -1105,6 +1105,7 @@ git checkout -b feature/your-feature-name
 cd backend && pip install -r requirements-dev.txt
 python tests/test_isolation.py     # Tenant isolation + schema readiness
 python tests/test_rate_limit.py    # Rate limiting
+python tests/test_timestamps.py    # UTC timestamps
 python tests/test_spend_guard.py   # Spend caps
 python tests/test_moderation.py    # Moderation
 python tests/test_analytics.py     # Product analytics
