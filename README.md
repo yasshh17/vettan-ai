@@ -562,6 +562,15 @@ Isolation is enforced in two independent layers:
 Rows created before `0001` have `user_id` NULL. They have no recoverable owner
 and are deliberately invisible to every account.
 
+#### Product analytics
+
+`0008_analytics_events.sql` adds `analytics_events`. It holds one row of timings,
+counts and estimated cost per research or follow-up request, and no query or
+report text. The table is service-role only: RLS is on, there are no policies,
+and every privilege is revoked from `anon` and `authenticated`. It is
+non-breaking and can be applied at any time. Setup, the admin variable and the
+metric definitions are in [docs/analytics.md](docs/analytics.md).
+
 ---
 
 ## 📖 Usage Examples
@@ -781,11 +790,17 @@ Delete conversation and all associated messages.
 
 **Response:** `{ success: true, message: "Session deleted", session_id }` — `404` if the session does not exist or belongs to another user.
 
+#### **GET `/api/admin/analytics/summary?days=7`**
+
+Aggregate product metrics for the last `days` UTC days (1–90). Only user ids
+listed in `ANALYTICS_ADMIN_USER_IDS` can call it; anyone else gets `403`. It
+returns counts, rates and percentiles only. See [docs/analytics.md](docs/analytics.md).
+
 ---
 
 ## ⚡ Implementation Notes
 
-The repository does not currently include a reproducible benchmark suite for latency, cost savings, answer correctness, or accessibility scores. Those measures should be reported only after running a documented evaluation with a fixed query set and environment.
+The repository does not currently include a reproducible benchmark suite for latency, cost savings, answer correctness, or accessibility scores. Those measures should be reported only after running a documented evaluation with a fixed query set and environment. Production latency, completion and cost figures come from the analytics summary ([docs/analytics.md](docs/analytics.md)). Quote them only with their window and sample size.
 
 ### Optimizations Implemented
 
@@ -1020,6 +1035,13 @@ MODERATION_FAIL_CLOSED=input,audio   # sources refused when moderation can't run
 
 # ── Security log ─────────────────────────────────────────────────────────
 AUDIT_IP_SALT=change-me         # any random string; used to hash IPs in [Security] logs
+
+# ── Product analytics (docs/analytics.md) ────────────────────────────────
+ANALYTICS_ENABLED=true
+ANALYTICS_ADMIN_USER_IDS=       # comma-separated auth user ids; empty = nobody can read the summary
+OPENAI_INPUT_USD_PER_1M=0.15    # prices behind the per-request cost estimate
+OPENAI_OUTPUT_USD_PER_1M=0.60
+TAVILY_USD_PER_SEARCH=0.008     # set to your plan's per-credit price
 ```
 
 > **Set `REDIS_URL` before scaling out.** Without it, rate limits live in each
@@ -1075,6 +1097,7 @@ python tests/test_isolation.py     # Tenant isolation + schema readiness
 python tests/test_rate_limit.py    # Rate limiting
 python tests/test_spend_guard.py   # Spend caps
 python tests/test_moderation.py    # Moderation
+python tests/test_analytics.py     # Product analytics
 # The backend suites are standalone scripts, not pytest — run them directly.
 # CI runs all of the above on every push (.github/workflows/ci.yml).
 

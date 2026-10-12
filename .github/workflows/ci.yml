@@ -90,6 +90,9 @@ jobs:
       - name: Security audit log tests
         run: python tests/test_audit.py
 
+      - name: Product analytics tests
+        run: python tests/test_analytics.py
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

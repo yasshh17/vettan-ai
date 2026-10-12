@@ -4,10 +4,13 @@ import json
 import time
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import AsyncIterator, List, Dict, Any, Optional
 
 import httpx
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
+
+from utils.rate_limit import _env_float
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,42 @@ TAVILY_CALL_TIMEOUT = 8.0
 TAVILY_WAVE_DEADLINE = 6.0      # finished searches are kept when this expires
 
 _tavily_http: Optional[httpx.AsyncClient] = None
+
+# Analytics cost estimate. gpt-4o-mini list prices; a basic Tavily search is 1 credit.
+OPENAI_INPUT_USD_PER_1M = _env_float("OPENAI_INPUT_USD_PER_1M", 0.15)
+OPENAI_OUTPUT_USD_PER_1M = _env_float("OPENAI_OUTPUT_USD_PER_1M", 0.60)
+TAVILY_USD_PER_SEARCH = _env_float("TAVILY_USD_PER_SEARCH", 0.008)
+
+
+@dataclass
+class _RunStats:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    missing_usage: bool = False
+    decomposition_fallback: bool = False
+    synthesis_error: bool = False
+
+    def add_usage(self, usage: Any) -> None:
+        if usage is None:
+            self.missing_usage = True
+            return
+        self.input_tokens += getattr(usage, "prompt_tokens", 0) or 0
+        self.output_tokens += getattr(usage, "completion_tokens", 0) or 0
+
+    def cost_usd(self, searches: int) -> Optional[float]:
+        # None rather than an undercount.
+        if self.missing_usage:
+            return None
+        return round(
+            self.input_tokens / 1_000_000 * OPENAI_INPUT_USD_PER_1M
+            + self.output_tokens / 1_000_000 * OPENAI_OUTPUT_USD_PER_1M
+            + searches * TAVILY_USD_PER_SEARCH,
+            6,
+        )
+
+
+def _ms(seconds: Optional[float]) -> Optional[int]:
+    return None if seconds is None else int(round(seconds * 1000))
 
 
 def _get_tavily_http() -> httpx.AsyncClient:
@@ -87,8 +126,9 @@ Input: {query}
 Output:"""
 
 
-async def decompose_query(query: str) -> List[str]:
+async def decompose_query(query: str, stats: Optional[_RunStats] = None) -> List[str]:
     """Split a query into 3-4 search queries, falling back to the original."""
+    stats = stats or _RunStats()
     try:
         response = await openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -98,6 +138,7 @@ async def decompose_query(query: str) -> List[str]:
             temperature=0.2,
             max_tokens=200
         )
+        stats.add_usage(getattr(response, "usage", None))
 
         content = response.choices[0].message.content.strip()
 
@@ -114,10 +155,12 @@ async def decompose_query(query: str) -> List[str]:
                     return parsed[key][:4]
 
         logger.warning(f"Unexpected decomposition format: {content}")
+        stats.decomposition_fallback = True
         return [query]
 
     except Exception as e:
         logger.warning(f"Query decomposition failed ({e}), using original query")
+        stats.decomposition_fallback = True
         return [query]
 
 
@@ -285,9 +328,11 @@ def _build_citations(sources: List[Dict[str, Any]], query: str) -> List[Dict[str
 async def synthesize(
     query: str,
     sources: List[Dict[str, Any]],
-    tavily_answers: List[str] = None
+    tavily_answers: List[str] = None,
+    stats: Optional[_RunStats] = None
 ) -> str:
     prompt = _build_synthesis_prompt(query, sources, tavily_answers)
+    stats = stats or _RunStats()
 
     try:
         response = await openai_client.chat.completions.create(
@@ -296,17 +341,20 @@ async def synthesize(
             temperature=0.3,
             max_tokens=1500
         )
+        stats.add_usage(getattr(response, "usage", None))
         return response.choices[0].message.content
 
     except Exception as e:
         logger.error(f"Synthesis failed: {e}")
+        stats.synthesis_error = True
         return f"Research synthesis encountered an error: {str(e)}"
 
 
 async def synthesize_stream(
     query: str,
     sources: List[Dict[str, Any]],
-    tavily_answers: List[str] = None
+    tavily_answers: List[str] = None,
+    stats: Optional[_RunStats] = None
 ) -> AsyncIterator[str]:
     """synthesize(), streamed as text deltas."""
     prompt = _build_synthesis_prompt(query, sources, tavily_answers)
@@ -316,11 +364,18 @@ async def synthesize_stream(
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=1500,
-        stream=True
+        stream=True,
+        # Usage comes in a last chunk with no choices.
+        stream_options={"include_usage": True}
     )
 
+    stats = stats or _RunStats()
+    saw_usage = False
     try:
         async for chunk in stream:
+            if getattr(chunk, "usage", None) is not None:
+                saw_usage = True
+                stats.add_usage(chunk.usage)
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta.content
@@ -329,14 +384,81 @@ async def synthesize_stream(
     finally:
         # Closes the HTTP response if the client disconnects.
         await stream.close()
+    if not saw_usage:
+        stats.missing_usage = True
+
+
+def _research_failure_stage(search_results: Dict[str, Any], stats: _RunStats, output: str) -> Optional[str]:
+    if not search_results["sources"]:
+        return "search" if search_results["successful_searches"] == 0 else "search_no_results"
+    if stats.synthesis_error or not (output or "").strip():
+        return "synthesis"
+    return None
+
+
+def _progress_analytics(
+    stats: _RunStats,
+    sub_queries: List[str],
+    decomp_time: float,
+    search_results: Optional[Dict[str, Any]] = None,
+    search_time: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Numbers so far, so an abandoned stream still gets recorded. Excludes synthesis."""
+    searched = search_results is not None
+    return {
+        "pipeline": "stream_v1",
+        "decomposition_latency_ms": _ms(decomp_time),
+        "search_latency_ms": _ms(search_time),
+        "subquery_count": len(sub_queries),
+        "successful_search_count": search_results["successful_searches"] if searched else None,
+        "total_search_count": search_results["total_searches"] if searched else None,
+        "selected_source_count": len(search_results["sources"]) if searched else None,
+        "decomposition_fallback": stats.decomposition_fallback,
+        "input_tokens": stats.input_tokens,
+        "output_tokens": stats.output_tokens,
+        "estimated_cost_usd": stats.cost_usd(search_results["total_searches"] if searched else 0),
+        "cost_partial": True,
+    }
+
+
+def _research_analytics(
+    stats: _RunStats,
+    sub_queries: List[str],
+    search_results: Dict[str, Any],
+    output: str,
+    pipeline: str,
+    decomp_time: float,
+    search_time: float,
+    synthesis_time: float,
+    ttft: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Ends up in analytics_events, so numbers only."""
+    return {
+        "pipeline": pipeline,
+        "decomposition_latency_ms": _ms(decomp_time),
+        "search_latency_ms": _ms(search_time),
+        "synthesis_latency_ms": _ms(synthesis_time),
+        "synthesis_ttft_ms": _ms(ttft),
+        "subquery_count": len(sub_queries),
+        "successful_search_count": search_results["successful_searches"],
+        "total_search_count": search_results["total_searches"],
+        "selected_source_count": len(search_results["sources"]),
+        "decomposition_fallback": stats.decomposition_fallback,
+        "input_tokens": stats.input_tokens,
+        "output_tokens": stats.output_tokens,
+        # Attempted, not successful: a search cut off at the deadline can still be billed.
+        "estimated_cost_usd": stats.cost_usd(search_results["total_searches"]),
+        "failure_stage": _research_failure_stage(search_results, stats, output),
+    }
 
 
 async def research_complete(query: str) -> Dict[str, Any]:
     """Decompose, search, synthesize. Returns {output, citations, metadata}."""
     start_time = time.time()
+    stats = _RunStats()
 
     warm_task = asyncio.create_task(warm_tavily_connections(n=4))
-    sub_queries = await decompose_query(query)
+    sub_queries = await decompose_query(query, stats)
     decomp_time = time.time() - start_time
     logger.info(f"[Pipeline] Decomposed in {decomp_time:.1f}s: {sub_queries}")
     if not warm_task.done():
@@ -359,7 +481,8 @@ async def research_complete(query: str) -> Dict[str, Any]:
         response_text = await synthesize(
             query=query,
             sources=search_results["sources"],
-            tavily_answers=search_results.get("tavily_answers", [])
+            tavily_answers=search_results.get("tavily_answers", []),
+            stats=stats
         )
 
     synthesis_time = time.time() - synthesis_start
@@ -386,7 +509,12 @@ async def research_complete(query: str) -> Dict[str, Any]:
                 "search": round(search_time, 1),
                 "synthesis": round(synthesis_time, 1)
             }
-        }
+        },
+        # main.py reads this for analytics; it never reaches the client.
+        "analytics": _research_analytics(
+            stats, sub_queries, search_results, response_text, "parallel_v2",
+            decomp_time, search_time, synthesis_time
+        )
     }
 
 
@@ -400,15 +528,21 @@ async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
         {"type": "final",  ...}  same payload as research_complete()
     """
     start_time = time.time()
+    stats = _RunStats()
 
     warm_task = asyncio.create_task(warm_tavily_connections(n=4))
-    sub_queries = await decompose_query(query)
+    sub_queries = await decompose_query(query, stats)
     decomp_time = time.time() - start_time
     logger.info(f"[Stream] Decomposed in {decomp_time:.1f}s: {sub_queries}")
     if not warm_task.done():
         warm_task.cancel()
 
-    yield {"type": "stage", "phase": "decomposed", "sub_queries": sub_queries}
+    yield {
+        "type": "stage",
+        "phase": "decomposed",
+        "sub_queries": sub_queries,
+        "analytics": _progress_analytics(stats, sub_queries, decomp_time)
+    }
 
     search_start = time.time()
     search_results = await parallel_search(queries=sub_queries, max_results_per_query=5)
@@ -424,7 +558,8 @@ async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
     yield {
         "type": "sources",
         "citations": citations,
-        "sources_count": len(sources)
+        "sources_count": len(sources),
+        "analytics": _progress_analytics(stats, sub_queries, decomp_time, search_results, search_time)
     }
 
     synthesis_start = time.time()
@@ -439,7 +574,8 @@ async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
         async for delta in synthesize_stream(
             query=query,
             sources=sources,
-            tavily_answers=search_results.get("tavily_answers", [])
+            tavily_answers=search_results.get("tavily_answers", []),
+            stats=stats
         ):
             if ttft is None:
                 ttft = time.time() - synthesis_start
@@ -471,7 +607,11 @@ async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
                 "synthesis": round(synthesis_time, 1),
                 "ttft": round(ttft, 1) if ttft is not None else None
             }
-        }
+        },
+        "analytics": _research_analytics(
+            stats, sub_queries, search_results, response_text, "stream_v1",
+            decomp_time, search_time, synthesis_time, ttft
+        )
     }
 
 
@@ -501,6 +641,24 @@ def _build_followup_messages(
     return messages
 
 
+def _followup_analytics(
+    stats: _RunStats,
+    output: str,
+    pipeline: str,
+    llm_time: float,
+    ttft: Optional[float] = None,
+) -> Dict[str, Any]:
+    return {
+        "pipeline": pipeline,
+        "synthesis_latency_ms": _ms(llm_time),
+        "synthesis_ttft_ms": _ms(ttft),
+        "input_tokens": stats.input_tokens,
+        "output_tokens": stats.output_tokens,
+        "estimated_cost_usd": stats.cost_usd(searches=0),
+        "failure_stage": "synthesis" if stats.synthesis_error or not (output or "").strip() else None,
+    }
+
+
 async def handle_followup(
     query: str,
     conversation_history: List[Dict[str, str]]
@@ -508,6 +666,7 @@ async def handle_followup(
     """Answer a follow-up with one chat call instead of the full pipeline."""
     start_time = time.time()
     messages = _build_followup_messages(query, conversation_history)
+    stats = _RunStats()
 
     try:
         response = await openai_client.chat.completions.create(
@@ -516,25 +675,30 @@ async def handle_followup(
             temperature=0.3,
             max_tokens=1500
         )
+        stats.add_usage(getattr(response, "usage", None))
 
         total_time = time.time() - start_time
+        output = response.choices[0].message.content
 
         return {
-            "output": response.choices[0].message.content,
+            "output": output,
             "citations": [],
             "metadata": {
                 "total_time": round(total_time, 1),
                 "followup": True,
                 "pipeline": "direct_llm"
-            }
+            },
+            "analytics": _followup_analytics(stats, output, "direct_llm", total_time)
         }
 
     except Exception as e:
         logger.error(f"Follow-up failed: {e}")
+        stats.synthesis_error = True
         return {
             "output": f"Error handling follow-up: {str(e)}",
             "citations": [],
-            "metadata": {"followup": True, "error": True}
+            "metadata": {"followup": True, "error": True},
+            "analytics": _followup_analytics(stats, "", "direct_llm", time.time() - start_time)
         }
 
 
@@ -551,13 +715,20 @@ async def handle_followup_stream(
         messages=messages,
         temperature=0.3,
         max_tokens=1500,
-        stream=True
+        stream=True,
+        # Usage comes in a last chunk with no choices.
+        stream_options={"include_usage": True}
     )
 
+    stats = _RunStats()
+    saw_usage = False
     parts: List[str] = []
     ttft = None
     try:
         async for chunk in stream:
+            if getattr(chunk, "usage", None) is not None:
+                saw_usage = True
+                stats.add_usage(chunk.usage)
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta.content
@@ -569,17 +740,22 @@ async def handle_followup_stream(
     finally:
         await stream.close()
 
+    if not saw_usage:
+        stats.missing_usage = True
+
     total_time = time.time() - start_time
     logger.info(f"[Stream] Follow-up: ttft={(ttft or 0):.1f}s, total={total_time:.1f}s")
 
+    output = "".join(parts)
     yield {
         "type": "final",
-        "output": "".join(parts),
+        "output": output,
         "citations": [],
         "metadata": {
             "total_time": round(total_time, 1),
             "followup": True,
             "pipeline": "direct_llm_stream",
             "timing": {"ttft": round(ttft, 1) if ttft is not None else None}
-        }
+        },
+        "analytics": _followup_analytics(stats, output, "direct_llm_stream", total_time, ttft)
     }
