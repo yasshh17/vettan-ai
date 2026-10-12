@@ -611,8 +611,9 @@ print("\n[5] Admin summary is admins only")
 
 
 class FakeQuery:
-    def __init__(self, owner):
+    def __init__(self, owner, rows):
         self.owner = owner
+        self.rows = rows
         self.lo, self.hi = 0, 0
 
     def select(self, cols):
@@ -632,20 +633,23 @@ class FakeQuery:
 
     def execute(self):
         # Mimics a PostgREST max-rows cap smaller than the page size.
+        if self.rows is None:
+            raise RuntimeError("relation does not exist")
         end = min(self.hi + 1, self.lo + self.owner.server_cap)
-        return NS(data=self.owner.rows[self.lo:end])
+        return NS(data=self.rows[self.lo:end])
 
 
 class FakeAdminClient:
-    def __init__(self, rows, server_cap=1000):
-        self.rows = rows
+    # feedback_rows=None acts like 0009 not being applied.
+    def __init__(self, rows, server_cap=1000, feedback_rows=()):
+        self.tables = {"analytics_events": rows, "answer_feedback": feedback_rows}
         self.server_cap = server_cap
         self.selected = []
         self.since = []
 
     def table(self, name):
-        assert name == "analytics_events"
-        return FakeQuery(self)
+        rows = self.tables[name]
+        return FakeQuery(self, None if rows is None else list(rows))
 
 
 now = datetime.now(timezone.utc)
@@ -680,21 +684,31 @@ main.get_admin_client = lambda: None
 r = client.get("/api/admin/analytics/summary")
 check("admin, no service-role client -> 503", r.status_code == 503, str(r.status_code))
 
-fake_admin = FakeAdminClient(sample_rows)
+fake_admin = FakeAdminClient(sample_rows, feedback_rows=[
+    {"id": 1, "rating": "up", "is_followup": False, "created_at": now.isoformat()},
+])
 main.get_admin_client = lambda: fake_admin
 r = client.get("/api/admin/analytics/summary?days=30")
 check("Alice (listed, any case/whitespace) -> 200", r.status_code == 200, r.text[:200])
 body = r.json()
 check("summary is aggregates only (no user ids in the body)", ALICE not in r.text and BOB not in r.text)
 check("summary has the expected sections",
-      set(body) == {"period_days", "from", "to", "truncated", "research", "followups",
-                    "total_estimated_cost_usd", "failures_by_stage", "daily"}, str(set(body)))
+      set(body) == {"period_days", "from", "to", "truncated", "research", "followups", "feedback",
+                    "retention", "total_estimated_cost_usd", "failures_by_stage", "daily"}, str(set(body)))
+check("summary includes feedback", body["feedback"]["ratings"] == 1 and body["feedback"]["up_rate"] == 1.0,
+      str(body["feedback"]))
+check("feedback read selects no ids or text",
+      any(cols == "id,rating,is_followup,created_at" for cols in fake_admin.selected), str(fake_admin.selected))
 check("summary reads only the columns it needs", fake_admin.selected and "*" not in fake_admin.selected[0]
       and "metadata" not in fake_admin.selected[0])
 check("days=30 -> 30 daily buckets", len(body["daily"]) == 30)
 for bad in (0, 91):
     r = client.get(f"/api/admin/analytics/summary?days={bad}")
     check(f"days={bad} -> 422", r.status_code == 422, str(r.status_code))
+main.get_admin_client = lambda: FakeAdminClient(sample_rows, feedback_rows=None)
+r = client.get("/api/admin/analytics/summary")
+check("feedback table missing: summary still 200, feedback null",
+      r.status_code == 200 and r.json()["feedback"] is None, r.text[:200])
 main.get_admin_client = real_admin
 os.environ["ANALYTICS_ADMIN_USER_IDS"] = ""
 
@@ -826,6 +840,51 @@ analytics_summary.MAX_ROWS = 5
 got, truncated = analytics_summary.fetch_rows(FakeAdminClient([{"id": i} for i in range(9)], server_cap=2), fixed_now)
 analytics_summary.MAX_ROWS = saved_max
 check("row cap reached -> truncated flag", (len(got), truncated) == (5, True), f"{len(got)} {truncated}")
+
+
+print("\n[8] Feedback and retention")
+
+fb = analytics_summary.summarize_feedback([], 0)
+check("feedback, no ratings: counts 0, rates None",
+      (fb["ratings"], fb["up_rate"], fb["research_up_rate"], fb["ratings_per_answer"]) == (0, None, None, None), str(fb))
+fb = analytics_summary.summarize_feedback([
+    {"rating": "up", "is_followup": False}, {"rating": "up", "is_followup": False},
+    {"rating": "down", "is_followup": False}, {"rating": "down", "is_followup": True},
+], 8)
+check("feedback: totals and up rate", (fb["ratings"], fb["up"], fb["down"], fb["up_rate"]) == (4, 2, 2, 0.5), str(fb))
+check("feedback: split by research and follow-up",
+      (fb["research_up_rate"], fb["followup_up_rate"]) == (round(2 / 3, 4), 0.0), str(fb))
+check("feedback: ratings per completed answer", fb["ratings_per_answer"] == 0.5)
+s = analytics_summary.summarize(rows, 7, fixed_now)
+check("summarize without feedback rows -> feedback None", s["feedback"] is None)
+
+empty_retention = analytics_summary.summarize_retention([], 7, fixed_now)
+check("retention, no data: 0 eligible and rate None",
+      all(empty_retention[k] == {"eligible": 0, "retained": 0, "rate": None} for k in ("d1", "d7", "d30"))
+      and empty_retention["new_users"] == 0, str(empty_retention))
+
+
+def seen(user, days_ago):
+    return {"user_id": user, "created_at": (fixed_now - timedelta(days=days_ago)).isoformat()}
+
+
+CAROL = "44444444-4444-4444-4444-444444444444"
+DAVE = "55555555-5555-5555-5555-555555555555"
+activity = [
+    seen(ALICE, 40), seen(ALICE, 37),                 # back on day 3
+    seen(BOB, 40),                                    # never back
+    seen(CAROL, 10), seen(CAROL, 9), seen(CAROL, 9),  # back on day 1, same day twice
+    seen(DAVE, 0),                                    # first seen today
+    {"user_id": None, "created_at": fixed_now.isoformat()},
+]
+ret = analytics_summary.summarize_retention(activity, 7, fixed_now)
+check("d1: Alice, Bob, Carol eligible; only Carol back the next day",
+      ret["d1"] == {"eligible": 3, "retained": 1, "rate": round(1 / 3, 4)}, str(ret["d1"]))
+check("d7: Alice (day 3) and Carol (day 1) back within 7 days",
+      ret["d7"] == {"eligible": 3, "retained": 2, "rate": round(2 / 3, 4)}, str(ret["d7"]))
+check("d30: only Alice and Bob are old enough",
+      ret["d30"] == {"eligible": 2, "retained": 1, "rate": 0.5}, str(ret["d30"]))
+check("new users in the 7-day window: Dave only (deleted users skipped)", ret["new_users"] == 1, str(ret))
 
 
 main.app.dependency_overrides.clear()

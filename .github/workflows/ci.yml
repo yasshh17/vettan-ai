@@ -93,6 +93,9 @@ jobs:
       - name: Product analytics tests
         run: python tests/test_analytics.py
 
+      - name: Answer feedback tests
+        run: python tests/test_feedback.py
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

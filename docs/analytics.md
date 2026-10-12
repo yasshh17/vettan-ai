@@ -7,15 +7,16 @@ stays in your Supabase project.
 
 - Writer: [`backend/utils/analytics.py`](../backend/utils/analytics.py)
 - Summary: [`backend/utils/analytics_summary.py`](../backend/utils/analytics_summary.py)
-- Migration: [`supabase/migrations/0008_analytics_events.sql`](../supabase/migrations/0008_analytics_events.sql)
-- Tests: [`backend/tests/test_analytics.py`](../backend/tests/test_analytics.py)
+- Migrations: [`0008_analytics_events.sql`](../supabase/migrations/0008_analytics_events.sql), [`0009_answer_feedback.sql`](../supabase/migrations/0009_answer_feedback.sql)
+- Tests: [`test_analytics.py`](../backend/tests/test_analytics.py), [`test_feedback.py`](../backend/tests/test_feedback.py)
 
 ## Setup
 
-1. **Apply the migration.** In the Supabase SQL editor, run
-   `0008_analytics_events.sql`. It is idempotent and non-breaking. The backend
-   doesn't need it to serve requests: until the table exists, each analytics
-   write fails, logs a warning and is dropped.
+1. **Apply the migrations.** In the Supabase SQL editor, run
+   `0008_analytics_events.sql`, then `0009_answer_feedback.sql`. Both are
+   idempotent and non-breaking. Until 0008 exists, analytics writes log a
+   warning and are dropped. Until 0009 exists, the thumbs return 500 and the
+   summary shows `feedback: null`.
 2. **Check that it is closed to clients.** With the anon key and no user JWT,
    this must return `permission denied` or `[]`:
 
@@ -155,6 +156,43 @@ denominator of zero is `null`, not `0`.
 - Moderation calls are free and are not included.
 - The result is only as accurate as the three price variables. Check them
   against your OpenAI and Tavily invoices.
+
+## Answer feedback
+
+Each finished answer has a thumbs up and a thumbs down. Clicking the selected
+one again clears it. `PUT /api/feedback` stores one row per user per answer in
+`answer_feedback`: the user, session and message ids, the rating, and whether
+it was a follow-up. No text. Only the owner of the session can vote on or read
+its ratings.
+
+| Metric | Definition |
+|---|---|
+| `feedback.ratings`, `up`, `down` | Votes cast in the window (by `created_at` of the vote) |
+| `feedback.up_rate` | `up` ÷ `ratings`; also split into `research_up_rate` and `followup_up_rate` |
+| `feedback.ratings_per_answer` | Votes ÷ completed answers (research, cache hits and follow-ups) in the window. It can pass 1.0 when people rate older answers. |
+
+People mostly vote when something is very good or very bad, so `up_rate` is
+not an accuracy score. Watch how it moves over time, and read it next to
+`ratings_per_answer`.
+
+A cached answer comes back with ids that aren't saved, so its vote is counted
+but doesn't show again after a reload.
+
+## Retention
+
+Computed from `analytics_events`; nothing extra is tracked. A user's first-seen
+day is their earliest event in the last 90 days.
+
+| Metric | Definition |
+|---|---|
+| `retention.dN.eligible` | Users first seen at least N days ago (N = 1, 7, 30) |
+| `retention.dN.retained` | Of those, users active again within N days of their first day |
+| `retention.dN.rate` | `retained` ÷ `eligible` |
+| `retention.new_users` | Users first seen inside the summary window |
+
+Analytics started on 2026-10-12, so d1 needs a day of data, d7 a week and d30 a
+month before they mean anything. Anyone inactive for more than 90 days and
+then back is counted as new.
 
 ## Known caveats
 

@@ -167,7 +167,7 @@ export async function withAuthRedirect<T>(fn: () => Promise<T>): Promise<T> {
 
 // Not an interceptor: that would apply to every axios caller in the app.
 async function request<T>(
-  method: "get" | "post" | "patch" | "delete",
+  method: "get" | "post" | "put" | "patch" | "delete",
   url: string,
   body?: unknown,
   config: AxiosRequestConfig = {}
@@ -183,7 +183,9 @@ async function request<T>(
           ? await axios.delete<T>(url, merged)
           : method === "post"
             ? await axios.post<T>(url, body, merged)
-            : await axios.patch<T>(url, body, merged)
+            : method === "put"
+              ? await axios.put<T>(url, body, merged)
+              : await axios.patch<T>(url, body, merged)
     return res.data
   } catch (error) {
     throw asRefusalError(error)
@@ -203,6 +205,14 @@ export async function authPost<T = unknown>(
   config: AxiosRequestConfig = {}
 ): Promise<T> {
   return request<T>("post", url, body, config)
+}
+
+export async function authPut<T = unknown>(
+  url: string,
+  body?: unknown,
+  config: AxiosRequestConfig = {}
+): Promise<T> {
+  return request<T>("put", url, body, config)
 }
 
 export async function authPatch<T = unknown>(
