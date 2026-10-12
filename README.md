@@ -571,6 +571,9 @@ and every privilege is revoked from `anon` and `authenticated`. It is
 non-breaking and can be applied at any time. Setup, the admin variable and the
 metric definitions are in [docs/analytics.md](docs/analytics.md).
 
+`0009_answer_feedback.sql` adds `answer_feedback` for the thumbs up/down on
+answers: ids and the rating only, service-role only, non-breaking.
+
 ---
 
 ## 📖 Usage Examples
@@ -795,6 +798,13 @@ Delete conversation and all associated messages.
 Aggregate product metrics for the last `days` UTC days (1–90). Only user ids
 listed in `ANALYTICS_ADMIN_USER_IDS` can call it; anyone else gets `403`. It
 returns counts, rates and percentiles only. See [docs/analytics.md](docs/analytics.md).
+
+#### **PUT `/api/feedback`** and **GET `/api/feedback?session_id=`**
+
+Thumbs up/down on an answer in one of the caller's sessions:
+`{ session_id, message_id, rating: "up" | "down" | null, is_followup }`. A null
+rating clears the vote. GET returns `{ ratings: { message_id: "up" | "down" } }`.
+Someone else's session is a `404`.
 
 ---
 
@@ -1098,6 +1108,7 @@ python tests/test_rate_limit.py    # Rate limiting
 python tests/test_spend_guard.py   # Spend caps
 python tests/test_moderation.py    # Moderation
 python tests/test_analytics.py     # Product analytics
+python tests/test_feedback.py      # Answer feedback
 # The backend suites are standalone scripts, not pytest — run them directly.
 # CI runs all of the above on every push (.github/workflows/ci.yml).
 

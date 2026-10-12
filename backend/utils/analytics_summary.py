@@ -4,12 +4,16 @@ Metric definitions are in docs/analytics.md.
 """
 from __future__ import annotations
 
+import logging
 import math
 from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from utils import feedback
 from utils.analytics import TABLE
+
+logger = logging.getLogger(__name__)
 
 COLUMNS = (
     "id,created_at,user_id,event_type,request_type,failure_stage,"
@@ -19,6 +23,9 @@ COLUMNS = (
 PAGE_SIZE = 1000
 MAX_ROWS = 200_000
 
+RETENTION_LOOKBACK_DAYS = 90
+RETENTION_DAYS = (1, 7, 30)
+
 
 def window_start(days: int, now: datetime) -> datetime:
     """Midnight UTC, `days - 1` days ago. Today counts as a day."""
@@ -26,14 +33,16 @@ def window_start(days: int, now: datetime) -> datetime:
     return datetime.combine(first_day, time.min, tzinfo=timezone.utc)
 
 
-def fetch_rows(client: Any, since: datetime) -> Tuple[List[Dict[str, Any]], bool]:
+def fetch_rows(
+    client: Any, since: datetime, table: str = TABLE, columns: str = COLUMNS
+) -> Tuple[List[Dict[str, Any]], bool]:
     """Rows since `since`, paged by id. True if MAX_ROWS cut it short."""
     rows: List[Dict[str, Any]] = []
     while len(rows) < MAX_ROWS:
         # Offset by rows received, in case PostgREST caps a page below PAGE_SIZE.
         response = (
-            client.table(TABLE)
-            .select(COLUMNS)
+            client.table(table)
+            .select(columns)
             .gte("created_at", since.isoformat())
             .order("id")
             .range(len(rows), len(rows) + PAGE_SIZE - 1)
@@ -100,11 +109,58 @@ def _day(value: Any) -> Optional[date]:
     return parsed.astimezone(timezone.utc).date()
 
 
+def summarize_feedback(rows: Sequence[Dict[str, Any]], completed_answers: int) -> Dict[str, Any]:
+    def up_rate(subset: Sequence[Dict[str, Any]]) -> Optional[float]:
+        return _rate(sum(r.get("rating") == "up" for r in subset), len(subset))
+
+    up = sum(r.get("rating") == "up" for r in rows)
+    return {
+        "ratings": len(rows),
+        "up": up,
+        "down": len(rows) - up,
+        "up_rate": up_rate(rows),
+        "research_up_rate": up_rate([r for r in rows if not r.get("is_followup")]),
+        "followup_up_rate": up_rate([r for r in rows if r.get("is_followup")]),
+        # Can pass 1.0 when people rate answers from before the window.
+        "ratings_per_answer": _rate(len(rows), completed_answers),
+    }
+
+
+def summarize_retention(rows: Sequence[Dict[str, Any]], days: int, now: datetime) -> Dict[str, Any]:
+    """Day N: of users first seen at least N days ago, how many came back within N days."""
+    active: Dict[str, set] = defaultdict(set)
+    for row in rows:
+        day = _day(row.get("created_at"))
+        if row.get("user_id") and day:
+            active[row["user_id"]].add(day)
+    first_seen = {user: min(seen) for user, seen in active.items()}
+
+    today = now.astimezone(timezone.utc).date()
+    result: Dict[str, Any] = {
+        "lookback_days": RETENTION_LOOKBACK_DAYS,
+        "new_users": sum(day >= window_start(days, now).date() for day in first_seen.values()),
+    }
+    for n in RETENTION_DAYS:
+        eligible = [user for user, first in first_seen.items() if first <= today - timedelta(days=n)]
+        retained = [
+            user for user in eligible
+            if any(first_seen[user] < day <= first_seen[user] + timedelta(days=n) for day in active[user])
+        ]
+        result[f"d{n}"] = {
+            "eligible": len(eligible),
+            "retained": len(retained),
+            "rate": _rate(len(retained), len(eligible)),
+        }
+    return result
+
+
 def summarize(
     rows: Sequence[Dict[str, Any]],
     days: int,
     now: datetime,
     truncated: bool = False,
+    feedback_rows: Optional[Sequence[Dict[str, Any]]] = None,
+    activity_rows: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     since = window_start(days, now)
     by_type: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -174,6 +230,10 @@ def summarize(
             "latency_ms": _distribution(_values(followup_ok, "total_latency_ms")),
             "ttft_ms": _distribution(_values(followup_ok, "ttft_ms")),
         },
+        "feedback": None if feedback_rows is None else summarize_feedback(
+            feedback_rows, len(fresh_ok) + len(cache_hits) + len(followup_ok)
+        ),
+        "retention": summarize_retention(activity_rows or [], days, now),
         "total_estimated_cost_usd": round(sum(_values(rows, "estimated_cost_usd")), 6),
         "failures_by_stage": {kind: dict(counts) for kind, counts in failures.items()},
         "daily": [
@@ -189,5 +249,20 @@ def summarize(
 
 def build_summary(client: Any, days: int, now: Optional[datetime] = None) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
-    rows, truncated = fetch_rows(client, window_start(days, now))
-    return summarize(rows, days, now, truncated)
+    since = window_start(days, now)
+    rows, truncated = fetch_rows(client, since)
+    activity, activity_truncated = fetch_rows(
+        client, window_start(RETENTION_LOOKBACK_DAYS, now), columns="id,user_id,created_at"
+    )
+    try:
+        feedback_rows, feedback_truncated = fetch_rows(
+            client, since, table=feedback.TABLE, columns="id,rating,is_followup,created_at"
+        )
+    except Exception as e:
+        # 0009 may not be applied yet.
+        logger.warning(f"Feedback summary skipped: {type(e).__name__}")
+        feedback_rows, feedback_truncated = None, False
+    return summarize(
+        rows, days, now, truncated or activity_truncated or feedback_truncated,
+        feedback_rows=feedback_rows, activity_rows=activity,
+    )

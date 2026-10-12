@@ -10,6 +10,7 @@ import { RefusalBanner } from "@/components/research/refusal-banner"
 import { CollapsibleSources } from "@/components/research/collapsible-sources"
 import { StatsPanel } from "@/components/research/stats-panel"
 import { ActiveChatHeader } from "@/components/research/active-chat-header"
+import { AnswerFeedback, type Rating } from "@/components/research/answer-feedback"
 import { ChevronUp } from "lucide-react"
 import ReactMarkdown from 'react-markdown'
 import type { StreamEvent } from "@/lib/research-stream"
@@ -27,6 +28,8 @@ interface Citation {
 
 interface Message {
   id: string
+  // A streamed answer keeps its local id; this is the id it was saved under.
+  serverId?: string
   role: "user" | "assistant"
   content: string
   citations?: Citation[]
@@ -78,12 +81,18 @@ const MessageRow = memo(function MessageRow({
   message,
   isLastAssistant,
   showDivider,
-  isStreaming
+  isStreaming,
+  sessionId,
+  rating,
+  isFollowup
 }: {
   message: Message
   isLastAssistant: boolean
   showDivider: boolean
   isStreaming: boolean
+  sessionId: string | null
+  rating: Rating | null
+  isFollowup: boolean
 }) {
   if (message.role === "user") {
     return (
@@ -123,6 +132,17 @@ const MessageRow = memo(function MessageRow({
           </CardContent>
         </Card>
 
+        {!isStreaming && (
+          <div className="mt-2 flex justify-end">
+            <AnswerFeedback
+              sessionId={sessionId}
+              messageId={message.serverId ?? message.id}
+              initialRating={rating}
+              isFollowup={isFollowup}
+            />
+          </div>
+        )}
+
         {isLastAssistant && !isStreaming && (
           <div className="mt-5 space-y-4">
             <AudioPlayer text={message.content} />
@@ -152,6 +172,7 @@ export default function Home() {
   const [activeQuery, setActiveQuery] = useState<string | null>(null)
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [ratings, setRatings] = useState<Record<string, Rating>>({})
   const [showScrollTop, setShowScrollTop] = useState(false)
 
   const [isStreaming, setIsStreaming] = useState(false)
@@ -183,6 +204,24 @@ export default function Home() {
   const [searchBarKey, setSearchBarKey] = useState(0)
 
   const hasResults = messages.length > 0
+  const firstAnswerIndex = messages.findIndex((m) => m.role === "assistant")
+
+  useEffect(() => {
+    setRatings({})
+    if (!currentSessionId) return
+    let cancelled = false
+    authGet<{ ratings: Record<string, Rating> }>(
+      `${API_URL}/api/feedback?session_id=${encodeURIComponent(currentSessionId)}`
+    )
+      .then((data) => {
+        if (!cancelled) setRatings(data.ratings ?? {})
+      })
+      // Unsaved or brand-new sessions have no votes to show.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [currentSessionId])
   const hasStreamedText = Boolean(
     streamingId && messages.find((m) => m.id === streamingId)?.content
   )
@@ -427,6 +466,7 @@ export default function Home() {
                 m.id === buffered.id
                   ? {
                       ...m,
+                      serverId: event.assistant_message_id,
                       content: buffered.text || m.content,
                       citations: (event.citations as Citation[]) ?? m.citations,
                       metadata: event.metadata
@@ -699,6 +739,9 @@ export default function Home() {
                     isLastAssistant={message.role === "assistant" && index === messages.length - 1}
                     showDivider={index < messages.length - 1 && message.role === "assistant"}
                     isStreaming={message.id === streamingId}
+                    sessionId={currentSessionId}
+                    rating={ratings[message.serverId ?? message.id] ?? null}
+                    isFollowup={index > firstAnswerIndex}
                   />
                 ))}
                 {refusal && (

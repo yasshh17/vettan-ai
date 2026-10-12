@@ -49,7 +49,7 @@ from utils.rate_limit import (
     RedisTokenBucketStore,
 )
 from utils.rate_limit_http import RateLimitMiddleware, rate_limited, request_ip, warn_if_multiprocess
-from utils import analytics, analytics_summary, audit, moderation, spend_guard
+from utils import analytics, analytics_summary, audit, feedback, moderation, spend_guard
 
 logging.getLogger("uvicorn.access").addFilter(audit.RedactClientIP())
 
@@ -1279,6 +1279,57 @@ async def analytics_summary_endpoint(
     except Exception as e:
         logger.error(f"Analytics summary failed: {type(e).__name__}")
         raise HTTPException(status_code=500, detail="Failed to build analytics summary")
+
+
+class FeedbackRequest(BaseModel):
+    session_id: uuid.UUID
+    message_id: uuid.UUID
+    rating: Optional[Literal["up", "down"]] = None
+    is_followup: bool = False
+
+
+async def _require_owned_session(user: AuthedUser, session_id: str) -> None:
+    db = _db_for(user)
+    if not db or not await asyncio.to_thread(db.owns_session, session_id, user.id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+def _feedback_client():
+    admin_client = get_admin_client()
+    if admin_client is None:
+        raise HTTPException(status_code=503, detail="Feedback is not configured on this server")
+    return admin_client
+
+
+@app.put("/api/feedback")
+async def set_feedback(body: FeedbackRequest, user: AuthedUser = Depends(write_user)):
+    """Rate an answer in one of the caller's sessions. A null rating clears it."""
+    session_id = str(body.session_id)
+    await _require_owned_session(user, session_id)
+    admin_client = _feedback_client()
+    try:
+        await asyncio.to_thread(
+            feedback.set_rating, admin_client, user.id, session_id,
+            str(body.message_id), body.rating, body.is_followup
+        )
+    except Exception as e:
+        logger.error(f"Feedback save failed: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail="Failed to save feedback")
+    return {"success": True, "rating": body.rating}
+
+
+@app.get("/api/feedback")
+async def get_feedback(session_id: uuid.UUID, user: AuthedUser = Depends(read_user)):
+    """The caller's ratings in one of their sessions, by message id."""
+    session_id = str(session_id)
+    await _require_owned_session(user, session_id)
+    admin_client = _feedback_client()
+    try:
+        ratings = await asyncio.to_thread(feedback.ratings_for_session, admin_client, user.id, session_id)
+    except Exception as e:
+        logger.error(f"Feedback fetch failed: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail="Failed to fetch feedback")
+    return {"ratings": ratings}
 
 
 @app.delete("/api/history/{session_id}")
