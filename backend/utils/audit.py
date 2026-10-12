@@ -21,6 +21,7 @@ EVENTS = frozenset({
     "spend_alert",
     "inflight_rejected",
     "account_deleted",
+    "admin_denied",
 })
 
 _IP_SALT: str = os.getenv("AUDIT_IP_SALT", "")

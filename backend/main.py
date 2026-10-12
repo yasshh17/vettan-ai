@@ -49,7 +49,7 @@ from utils.rate_limit import (
     RedisTokenBucketStore,
 )
 from utils.rate_limit_http import RateLimitMiddleware, rate_limited, request_ip, warn_if_multiprocess
-from utils import audit, moderation, spend_guard
+from utils import analytics, analytics_summary, audit, moderation, spend_guard
 
 logging.getLogger("uvicorn.access").addFilter(audit.RedactClientIP())
 
@@ -462,6 +462,9 @@ async def research(
         audit.record("inflight_rejected", user_id=user.id)
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
+    track = analytics.RequestTracker(
+        user.id, "followup" if request.session_id and request.is_followup else "research", "sync"
+    )
     try:
         db = _db_for(user)
         _require_schema(db)
@@ -483,6 +486,7 @@ async def research(
             logger.info(f"Processing follow-up in session: {request.session_id[:8]}")
             
             if not db or not db.is_connected:
+                track.failed("history")
                 raise HTTPException(status_code=503, detail="Database required for follow-ups")
 
             logger.info(f"Loading conversation history...")
@@ -495,6 +499,7 @@ async def research(
             # Empty also means "not yours"; same 404 so ids can't be probed.
             if not conversation_history:
                 logger.error(f"No history found for session: {request.session_id[:8]}")
+                track.failed("history")
                 raise HTTPException(status_code=404, detail="Conversation not found")
 
             user_msg = _new_message('user', request.query, created_at=request_started_iso)
@@ -507,6 +512,7 @@ async def research(
                 _spend_store, user.id, "followup", spend_guard.cost_usd("followup")
             )
 
+            track.stage = "synthesis"
             result = await handle_followup(
                 query=request.query,
                 conversation_history=context_history
@@ -515,9 +521,12 @@ async def research(
             ai_content = result['output']
             citations = result.get('citations', [])
 
+            track.stage = "moderation_output"
             verdict = await moderation.check(ai_content, "output", user.id)
             if verdict.flagged:
+                track.failed("moderation_output", analytics=result.get('analytics'))
                 raise moderation.blocked("output", verdict)
+            track.stage = "internal"
 
             metadata = result.get('metadata', {})
 
@@ -539,6 +548,7 @@ async def research(
                 _to_message(msg) for msg in conversation_history + [user_msg, assistant_msg]
             ]
 
+            track.outcome(result.get('analytics'), session_id=request.session_id)
             logger.info(f"[Request] follow-up total {time.perf_counter() - request_started:.2f}s")
             logger.info("="*60)
             logger.info(f"FOLLOW-UP COMPLETE: Returning {len(formatted_messages)} messages")
@@ -576,10 +586,14 @@ async def research(
             await spend_guard.charge(
                 _spend_store, user.id, "research", spend_guard.cost_usd("research")
             )
+            track.stage = "pipeline"
             result = await research_complete(request.query)
+            track.stage = "moderation_output"
             verdict = await moderation.check(result.get('output', ''), "output", user.id)
             if verdict.flagged:
+                track.failed("moderation_output", analytics=result.get('analytics'))
                 raise moderation.blocked("output", verdict)
+            track.stage = "internal"
             session_id = str(uuid.uuid4())
         else:
             session_id = result.get('metadata', {}).get('session_id')
@@ -615,6 +629,9 @@ async def research(
             else:
                 logger.warning("Result not saved (database unavailable or output too short)")
             result['metadata']['session_id'] = session_id
+            track.outcome(result.get('analytics'), session_id=session_id)
+        else:
+            track.cache_hit(session_id=session_id, selected_source_count=len(result.get('citations', [])))
 
         logger.info(f"Session: {session_id[:8]}")
         logger.info(f"[Request] new query total {time.perf_counter() - request_started:.2f}s")
@@ -638,6 +655,7 @@ async def research(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to process research request")
     finally:
+        track.finish()
         _research_slots.release(user.id)
 
 @app.post("/api/research/stream")
@@ -697,11 +715,17 @@ async def research_stream_endpoint(
             _research_slots.release(user.id)
             raise
 
+    track = analytics.RequestTracker(
+        user.id, "followup" if is_followup else "research", "stream", started=request_started
+    )
+
     async def event_stream():
         saved = False
         try:
             if is_followup:
+                track.stage = "history"
                 if not db or not db.is_connected:
+                    track.failed("history")
                     await spend_guard.refund(_spend_store, reservation)
                     yield _sse("error", {"message": "Database required for follow-ups"})
                     return
@@ -715,6 +739,7 @@ async def research_stream_endpoint(
                 # Empty also covers "owned by someone else" — see /api/research.
                 if not history:
                     logger.error(f"No history found for session: {request.session_id[:8]}")
+                    track.failed("history")
                     await spend_guard.refund(_spend_store, reservation)
                     yield _sse("error", {"message": "Conversation not found"})
                     return
@@ -722,24 +747,30 @@ async def research_stream_endpoint(
                 user_msg = _new_message('user', request.query, created_at=request_started_iso)
 
                 final = None
+                track.stage = "synthesis"
                 async for event in handle_followup_stream(
                     query=request.query,
                     conversation_history=history + [user_msg]
                 ):
                     if event["type"] == "token":
+                        track.mark_first_token()
                         yield _sse("token", {"text": event["text"]})
                     elif event["type"] == "final":
                         final = event
 
                 if not final:
+                    track.failed("synthesis")
                     yield _sse("error", {"message": "No response generated"})
                     return
 
+                track.stage = "moderation_output"
                 verdict = await moderation.check(final["output"], "output", user.id)
                 if verdict.flagged:
+                    track.failed("moderation_output", analytics=final.get("analytics"))
                     # Not "error": the frontend retries errors on /api/research, paying again.
                     yield _sse("blocked", {"message": moderation.message("output", verdict)})
                     return
+                track.stage = "internal"
 
                 metadata = {**final["metadata"], "is_followup": True}
                 assistant_msg = _new_message(
@@ -752,6 +783,7 @@ async def research_stream_endpoint(
                 )
                 saved = True
 
+                track.outcome(final.get("analytics"), session_id=request.session_id)
                 logger.info(f"[Request] streamed follow-up total {time.perf_counter() - request_started:.2f}s")
                 yield _sse("done", {
                     "session_id": request.session_id,
@@ -773,7 +805,9 @@ async def research_stream_endpoint(
                     'session_id': cached.get('id')
                 }
                 yield _sse("sources", {"citations": citations, "sources_count": len(citations)})
+                track.mark_first_token()
                 yield _sse("token", {"text": cached['report']})
+                track.cache_hit(session_id=cached.get('id'), selected_source_count=len(citations))
                 logger.info(f"[Request] cached stream total {time.perf_counter() - request_started:.2f}s")
                 yield _sse("done", {
                     "session_id": cached.get('id'),
@@ -789,13 +823,19 @@ async def research_stream_endpoint(
             session_id = str(uuid.uuid4())
             final = None
 
+            track.stage = "decomposition"
             async for event in research_stream(request.query):
                 kind = event["type"]
                 if kind == "token":
+                    track.mark_first_token()
                     yield _sse("token", {"text": event["text"]})
                 elif kind == "stage":
+                    track.stage = "search"
+                    track.update_progress(event.get("analytics"))
                     yield _sse("stage", {"phase": event["phase"], "sub_queries": event["sub_queries"]})
                 elif kind == "sources":
+                    track.stage = "synthesis"
+                    track.update_progress(event.get("analytics"))
                     yield _sse("sources", {
                         "citations": event["citations"],
                         "sources_count": event["sources_count"]
@@ -804,13 +844,17 @@ async def research_stream_endpoint(
                     final = event
 
             if not final:
+                track.failed("synthesis")
                 yield _sse("error", {"message": "No response generated"})
                 return
 
+            track.stage = "moderation_output"
             verdict = await moderation.check(final["output"], "output", user.id)
             if verdict.flagged:
+                track.failed("moderation_output", analytics=final.get("analytics"))
                 yield _sse("blocked", {"message": moderation.message("output", verdict)})
                 return
+            track.stage = "internal"
 
             output = final["output"]
             metadata = {**final["metadata"], "session_id": session_id}
@@ -836,6 +880,7 @@ async def research_stream_endpoint(
             else:
                 logger.warning("Streamed result not saved (database unavailable or output too short)")
 
+            track.outcome(final.get("analytics"), session_id=session_id)
             logger.info(f"[Request] streamed new query total {time.perf_counter() - request_started:.2f}s")
             yield _sse("done", {
                 "session_id": session_id,
@@ -850,15 +895,18 @@ async def research_stream_endpoint(
         except asyncio.CancelledError:
             # Client disconnected; don't save a truncated answer.
             logger.info(f"Stream aborted by client after {time.perf_counter() - request_started:.2f}s (nothing saved)")
+            track.failed("client_disconnect")
             raise
         except Exception as e:
             logger.error(f"STREAM ERROR: {e}")
             import traceback
             traceback.print_exc()
+            track.failed(track.stage)
             if not saved:
                 yield _sse("error", {"message": "Failed to process research request"})
         finally:
             # Also runs on GeneratorExit when the client disconnects.
+            track.finish("client_disconnect")
             _research_slots.release(user.id)
 
     return StreamingResponse(
@@ -1203,6 +1251,34 @@ async def delete_account(body: DeleteAccountRequest, user: AuthedUser = Depends(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to delete account")
+
+
+def _analytics_admin_ids() -> frozenset:
+    # Empty means no admins.
+    raw = os.getenv("ANALYTICS_ADMIN_USER_IDS", "")
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
+
+@app.get("/api/admin/analytics/summary")
+async def analytics_summary_endpoint(
+    request: Request,
+    days: int = Query(7, ge=1, le=90),
+    user: AuthedUser = Depends(read_user)
+):
+    """Aggregate metrics for the last `days` UTC days. Admins only."""
+    if user.id.lower() not in _analytics_admin_ids():
+        audit.record("admin_denied", user_id=user.id, ip=request_ip(request), path=request.url.path)
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    admin_client = get_admin_client()
+    if admin_client is None:
+        raise HTTPException(status_code=503, detail="Analytics is not configured on this server")
+
+    try:
+        return await asyncio.to_thread(analytics_summary.build_summary, admin_client, days)
+    except Exception as e:
+        logger.error(f"Analytics summary failed: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail="Failed to build analytics summary")
 
 
 @app.delete("/api/history/{session_id}")
