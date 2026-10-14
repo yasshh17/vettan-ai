@@ -37,7 +37,7 @@ stays in your Supabase project.
    | `ANALYTICS_ENABLED` | `true` | `false` stops all recording. |
    | `OPENAI_INPUT_USD_PER_1M` | `0.15` | gpt-4o-mini input price, used for the cost estimate. |
    | `OPENAI_OUTPUT_USD_PER_1M` | `0.60` | gpt-4o-mini output price. |
-   | `TAVILY_USD_PER_SEARCH` | `0.008` | Price of one basic search (1 credit). **Set this to your plan's real per-credit price.** The default is a placeholder, not a verified figure for your account. |
+   | `TAVILY_USD_PER_SEARCH` | `0.008` | Price of one basic search (1 credit). **Set this to Tavily's real per-credit price.** The default is a placeholder, not a verified figure for your account. |
 
 4. **Read the summary** as a listed admin:
 
@@ -219,7 +219,8 @@ Only quote figures that come from **real collected data** or a **repeatable benc
   samples, such as a week of your own testing, are not representative usage.
   Say so, or don't quote them.
 - **Benchmark:** a fixed, published query set run against a stated
-  environment and commit, with a script anyone can rerun.
+  environment and commit, with a script anyone can rerun. See
+  [benchmark.md](benchmark.md).
 - **Never quote** the default prices, the spend-guard reservation amounts
   (`COST_RESEARCH_USD` and similar) or numbers from this document as measured
   results. Costs are estimates derived from token counts and configured
