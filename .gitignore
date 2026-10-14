@@ -224,3 +224,6 @@ docs/.doctrees/
 # AI coding-agent tooling config (may contain live API keys, e.g. MCP server headers)
 .codex/
 .serena/
+
+# Benchmark runs; summarise them in the PR instead.
+backend/benchmarks/results/

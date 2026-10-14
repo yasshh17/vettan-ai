@@ -99,6 +99,9 @@ jobs:
       - name: Answer feedback tests
         run: python tests/test_feedback.py
 
+      - name: Benchmark script tests
+        run: python tests/test_benchmark.py
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

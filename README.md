@@ -1110,6 +1110,7 @@ python tests/test_spend_guard.py   # Spend caps
 python tests/test_moderation.py    # Moderation
 python tests/test_analytics.py     # Product analytics
 python tests/test_feedback.py      # Answer feedback
+python tests/test_benchmark.py     # Benchmark script (benchmarks/run_benchmark.py runs it for real)
 # The backend suites are standalone scripts, not pytest — run them directly.
 # CI runs all of the above on every push (.github/workflows/ci.yml).
 
