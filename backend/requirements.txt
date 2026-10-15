@@ -24,7 +24,7 @@ supabase==2.32.0
 websockets==15.0.1
 
 # Shared rate limits across workers, when REDIS_URL is set.
-redis==5.3.1
+redis==8.1.0
 
 # Error tracking, when SENTRY_DSN is set.
 sentry-sdk[fastapi]==2.72.0
