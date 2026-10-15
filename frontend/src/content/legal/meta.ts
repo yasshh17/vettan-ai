@@ -5,9 +5,11 @@ export const LEGAL_VALUES = {
   // TODO: switch to a dedicated address.
   CONTACT_EMAIL: "yasshh17@gmail.com",
   MIN_AGE: "18",
-  LAST_UPDATED: "October 6, 2026",
+  LAST_UPDATED: "October 14, 2026",
   // Render Hobby plan keeps logs for 7 days.
   LOG_RETENTION_DAYS: "7",
+  // Sentry keeps events 30 days on the free plan, 90 on paid.
+  ERROR_REPORT_RETENTION_DAYS: "30",
 } as const
 
 export type LegalSlug = "terms" | "privacy" | "usage-policy"
@@ -35,7 +37,7 @@ export const LEGAL_DOCUMENTS: Record<LegalSlug, LegalDocument> = {
     title: "Privacy Policy",
     shortTitle: "Privacy",
     description: "What Vettan collects, why, who processes it, and the choices you have.",
-    version: "1.0",
+    version: "1.1",
   },
   "usage-policy": {
     slug: "usage-policy",

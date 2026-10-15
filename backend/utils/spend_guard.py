@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Optional, Protocol, Tuple
 
 from fastapi import HTTPException
 
-from utils import audit
+from utils import audit, observability
 from utils.rate_limit import _env_bool, _env_float
 
 logger = logging.getLogger(__name__)
@@ -233,6 +233,7 @@ def _maybe_alert(global_spent_micros: int) -> None:
         if _alerted_day == today:
             return
         _alerted_day = today
+    observability.alert("Global spend passed the alert threshold")
     audit.record(
         "spend_alert",
         global_spent_usd=round(global_spent_micros / 1_000_000, 4),

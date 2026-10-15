@@ -10,6 +10,7 @@ from typing import AsyncIterator, List, Dict, Any, Optional
 import httpx
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
+from utils import observability
 from utils.rate_limit import _env_float
 
 logger = logging.getLogger(__name__)
@@ -192,6 +193,7 @@ async def _single_search(query: str, max_results: int = 5) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Search failed for '{query}': {e}")
+        observability.capture(e)
         return {"query": query, "answer": "", "results": [], "success": False}
 
 

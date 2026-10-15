@@ -369,6 +369,7 @@ vettan-ai/
 - **CDN:** Vercel Edge Network (global distribution)
 - **AI Provider:** OpenAI (GPT-4o-mini + TTS)
 - **Search Provider:** Tavily (professional web search API)
+- **Error Tracking:** Sentry, off unless a DSN is set; no questions, answers or IPs are sent ([docs/error-tracking.md](docs/error-tracking.md))
 - **CI/CD:** GitHub → Auto-deploy to Vercel + Render
 
 ---
@@ -983,6 +984,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 # Production (set in Vercel)
 NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
+
+# Error tracking (optional; see docs/error-tracking.md)
+NEXT_PUBLIC_SENTRY_DSN=
+SENTRY_AUTH_TOKEN=     # source map upload at build time
+SENTRY_ORG=
+SENTRY_PROJECT=
 ```
 
 **Backend (`.env`):**
@@ -1052,6 +1059,11 @@ ANALYTICS_ADMIN_USER_IDS=       # comma-separated auth user ids; empty = nobody 
 OPENAI_INPUT_USD_PER_1M=0.15    # prices behind the per-request cost estimate
 OPENAI_OUTPUT_USD_PER_1M=0.60
 TAVILY_USD_PER_SEARCH=0.008     # set to your plan's per-credit price
+
+# ── Error tracking (optional; see docs/error-tracking.md) ────────────────
+SENTRY_DSN=                      # empty = off
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=0.1
 ```
 
 > **Set `REDIS_URL` before scaling out.** Without it, rate limits live in each

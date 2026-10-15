@@ -99,6 +99,9 @@ jobs:
       - name: Answer feedback tests
         run: python tests/test_feedback.py
 
+      - name: Error tracking tests
+        run: python tests/test_observability.py
+
       - name: Benchmark script tests
         run: python tests/test_benchmark.py
 

@@ -26,6 +26,9 @@ websockets==15.0.1
 # Shared rate limits across workers, when REDIS_URL is set.
 redis==5.3.1
 
+# Error tracking, when SENTRY_DSN is set.
+sentry-sdk[fastapi]==2.72.0
+
 # The token bucket is hand-rolled in utils/rate_limit.py.
 # slowapi was dropped: its engine (`limits`) ships only fixed-window,
 # moving-window and sliding-window-counter strategies, none of which give the

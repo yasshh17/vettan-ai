@@ -39,6 +39,7 @@ It does not cover the third-party websites that answers cite or link to. Those s
 ### Information collected automatically
 
 - **Log data.** Like most web services, our servers and hosting providers keep logs to run the Service and fix problems. These logs can include your IP address, browser type, the time and address of each request, and your account ID. **Our server logs may also include excerpts of your activity**: up to the first 100 characters of a question, the search terms generated from it, and conversation titles. They are kept for a short period (see [Retention](#7-how-long-we-keep-information)).
+- **Error reports.** When something breaks in the app or on our servers, an error report is sent to our error-tracking provider, Sentry. A report contains the type of error and where in our code it happened, the page or server address involved (without any search parameters), your browser and device type, and a scrambled (one-way hashed) version of your account ID so we can tell how many people an error affects. Error reports **never** include your questions, answers, conversation titles, email address, IP address, cookies, or sign-in tokens. We also send a small sample of timing data (how long pages and requests took) with the same limits.
 - **Authentication events.** Supabase records sign-in, sign-up, and password-reset events, including the IP address and time, for security.
 - **Cookies and browser storage.** See [Cookies and browser storage](#9-cookies-and-browser-storage).
 
@@ -91,6 +92,7 @@ We use the following providers to run the Service. They process personal informa
 | [Vercel](https://vercel.com/legal/privacy-policy) | Hosts the website | Requests, log data | Global edge network |
 | [OpenAI](https://openai.com/policies/privacy-policy) | AI models, content screening, text-to-speech | Questions, conversation context, source excerpts, answers, audio text | United States |
 | [Tavily](https://tavily.com/privacy) | Web search | Search terms derived from your questions | United States |
+| [Sentry](https://sentry.io/privacy/) | Error and performance monitoring | Error reports and timing data: error type and code location, page or server address, browser and device type, hashed account ID. Never questions, answers, emails, IP addresses or cookies | United States |
 
 ## 6. When we share information
 
@@ -111,6 +113,7 @@ We share personal information only:
 | Daily usage records | While your account exists. Deleted with your account |
 | Aggregate daily totals (not linked to any person) | Indefinitely, to manage the Service's costs |
 | Server logs | About {{LOG_RETENTION_DAYS}} days, after which our hosting provider deletes them |
+| Error reports | Up to {{ERROR_REPORT_RETENTION_DAYS}} days, after which Sentry deletes them |
 | Database backups | If our database provider keeps backups, deleted data can remain in them for up to 7 days before they are overwritten |
 | Data held by OpenAI for abuse monitoring | Up to 30 days, under OpenAI's API data policy |
 | Emails you send us | As long as needed to deal with your request, then deleted |

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 // Origins for connect-src. Both are public values.
 const rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
@@ -77,4 +78,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Source maps upload only with SENTRY_AUTH_TOKEN (Vercel), so local and CI
+// builds don't need a Sentry account. Browser events go through /monitoring on
+// this origin, so the CSP needs no Sentry host.
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
+
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: sentryAuthToken,
+  sourcemaps: { disable: !sentryAuthToken },
+  // Without a DSN the tunnel would relay anything posted to it.
+  tunnelRoute: process.env.NEXT_PUBLIC_SENTRY_DSN ? "/monitoring" : undefined,
+  telemetry: false,
+  silent: !process.env.CI,
+});
