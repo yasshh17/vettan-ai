@@ -26,6 +26,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Has to run before the app is built.
+from utils import observability
+observability.init_sentry()
+
 from agent.research_pipeline import (
     research_complete,
     handle_followup,
@@ -96,6 +100,7 @@ async def lifespan(app: FastAPI):
             logger.info("Rate limits and research slots are shared through Redis")
         except Exception as e:
             logger.error(f"Redis is configured but unreachable ({e!r}); using per-process limits until it recovers")
+            observability.capture(e)
     else:
         logger.info("REDIS_URL not set: rate limits are per process (single worker only)")
     logger.info(
@@ -248,11 +253,13 @@ def _verify_access_token(authorization: Optional[str]) -> AuthedUser:
 async def get_current_user(request: Request, authorization: Optional[str] = Header(None)) -> AuthedUser:
     # get_user() blocks on the network; keep it off the event loop.
     try:
-        return await asyncio.to_thread(_verify_access_token, authorization)
+        user = await asyncio.to_thread(_verify_access_token, authorization)
     except HTTPException as e:
         if e.status_code == 401:
             audit.record("auth_failed", ip=request_ip(request), reason=e.detail, path=request.url.path)
         raise
+    observability.set_user(user.id)
+    return user
 
 
 # get_current_user plus a per-user bucket. research and research/stream share one
@@ -349,6 +356,7 @@ def _persist_new_session(
         logger.error(f"Save of session {session_id[:8]} failed after retry; answer was returned but not persisted")
     except Exception as e:
         logger.error(f"Save of session {session_id[:8]} crashed: {e}")
+        observability.capture(e)
 
 
 def _persist_followup(
@@ -370,6 +378,7 @@ def _persist_followup(
         logger.error(f"Save of follow-up in session {session_id[:8]} failed after retry; answer was returned but not persisted")
     except Exception as e:
         logger.error(f"Save of follow-up in session {session_id[:8]} crashed: {e}")
+        observability.capture(e)
 
 
 @app.get("/")
@@ -435,6 +444,7 @@ async def _cached_session(db, query: str, user_id: str) -> Optional[Dict[str, An
         logger.info(f"[DB] check_cache {time.perf_counter() - db_started:.2f}s")
     except Exception as e:
         logger.warning(f"Cache check failed: {e}")
+        observability.capture(e)
         return None
     if not cached:
         return None
@@ -651,6 +661,7 @@ async def research(
         raise
     except Exception as e:
         logger.error(f"CRITICAL ERROR: {e}")
+        observability.capture(e)
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to process research request")
@@ -899,6 +910,7 @@ async def research_stream_endpoint(
             raise
         except Exception as e:
             logger.error(f"STREAM ERROR: {e}")
+            observability.capture(e)
             import traceback
             traceback.print_exc()
             track.failed(track.stage)
@@ -963,6 +975,7 @@ async def get_session_messages(
         raise
     except Exception as e:
         logger.error(f"Message fetch failed: {e}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to fetch messages")
 
 @app.post("/api/audio")
@@ -1023,6 +1036,7 @@ async def generate_audio(
         raise
     except Exception as e:
         logger.error(f"Audio generation failed: {e}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to generate audio")
 
 @app.get("/api/history")
@@ -1060,6 +1074,7 @@ async def get_history(
         raise
     except Exception as e:
         logger.error(f"History fetch failed: {e}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to fetch history")
 
 @app.get("/api/history/{session_id}")
@@ -1121,6 +1136,7 @@ async def get_session(
         raise
     except Exception as e:
         logger.error(f"Session fetch failed: {e}")
+        observability.capture(e)
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to fetch session")
@@ -1173,6 +1189,7 @@ async def update_session(
         raise
     except Exception as e:
         logger.error(f"Update failed: {e}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to update session")
 
 class DeleteAccountRequest(BaseModel):
@@ -1248,6 +1265,7 @@ async def delete_account(body: DeleteAccountRequest, user: AuthedUser = Depends(
         raise
     except Exception as e:
         logger.error(f"Account deletion failed for user {user_id[:8]}...: {e}")
+        observability.capture(e)
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to delete account")
@@ -1278,6 +1296,7 @@ async def analytics_summary_endpoint(
         return await asyncio.to_thread(analytics_summary.build_summary, admin_client, days)
     except Exception as e:
         logger.error(f"Analytics summary failed: {type(e).__name__}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to build analytics summary")
 
 
@@ -1314,6 +1333,7 @@ async def set_feedback(body: FeedbackRequest, user: AuthedUser = Depends(write_u
         )
     except Exception as e:
         logger.error(f"Feedback save failed: {type(e).__name__}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to save feedback")
     return {"success": True, "rating": body.rating}
 
@@ -1328,6 +1348,7 @@ async def get_feedback(session_id: uuid.UUID, user: AuthedUser = Depends(read_us
         ratings = await asyncio.to_thread(feedback.ratings_for_session, admin_client, user.id, session_id)
     except Exception as e:
         logger.error(f"Feedback fetch failed: {type(e).__name__}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to fetch feedback")
     return {"ratings": ratings}
 
@@ -1363,6 +1384,7 @@ async def delete_session(
         raise
     except Exception as e:
         logger.error(f"Delete failed: {e}")
+        observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to delete session")
 
 if __name__ == "__main__":
