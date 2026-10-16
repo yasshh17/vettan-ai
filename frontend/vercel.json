@@ -2,11 +2,5 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
-  "framework": "nextjs",
-  "rewrites": [
-    {
-      "source": "/api/backend/:path*",
-      "destination": "https://vettan-ai.onrender.com/api/:path*"
-    }
-  ]
+  "framework": "nextjs"
 }

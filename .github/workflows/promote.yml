@@ -1,0 +1,46 @@
+name: Promote to production
+
+# Production (Render + Vercel) deploys from the release branch. This moves
+# release forward to the current main, but only if CI and the staging smoke
+# test both passed for that exact commit.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  promote:
+    name: Fast-forward release to main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Require green CI and smoke test for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "main is at $sha"
+          for wf in ci.yml smoke.yml; do
+            passed=$(gh run list -w "$wf" -c "$sha" -s success -L 1 --json databaseId --jq length)
+            if [ "$passed" != "1" ]; then
+              echo "::error::$wf has not passed for $sha. Wait for it or re-run it, then promote again."
+              exit 1
+            fi
+          done
+          echo "SHA=$sha" >> "$GITHUB_ENV"
+
+      - name: Push to release
+        # Not a force push: it fails if release has commits main doesn't.
+        run: |
+          git push origin "$SHA:refs/heads/release"
+          echo "### Promoted \`${SHA:0:12}\` to production" >> "$GITHUB_STEP_SUMMARY"

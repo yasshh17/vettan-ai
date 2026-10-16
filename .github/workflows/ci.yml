@@ -105,6 +105,9 @@ jobs:
       - name: Benchmark script tests
         run: python tests/test_benchmark.py
 
+      - name: Staging smoke script tests
+        run: python tests/test_smoke.py
+
   backend-image:
     name: Backend image (build, health, stop)
     runs-on: ubuntu-latest
