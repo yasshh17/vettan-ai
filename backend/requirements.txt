@@ -1,11 +1,11 @@
 # Core Backend
-fastapi==0.142.2
+fastapi==0.143.0
 uvicorn[standard]==0.54.0
-pydantic==2.13.5
+pydantic==2.14.1
 python-dotenv==1.2.4
 
 # OpenAI
-openai==3.16.2
+openai==3.29.0
 
 # The live research pipeline (agent/research_pipeline.py) calls the Tavily
 # HTTP API directly via httpx, not through the tavily-python SDK. LangChain,
