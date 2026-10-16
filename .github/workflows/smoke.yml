@@ -1,0 +1,49 @@
+name: Staging smoke test
+
+# Staging auto-deploys from main. This waits for that deploy, then signs in and
+# runs one real research question against it. promote.yml requires it to pass.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Twice a week, so the free staging Supabase project is never idle long enough to pause.
+    - cron: "0 6 * * 1,4"
+
+# A newer push cancels an older deploy check; scheduled runs queue separately so
+# they can't cancel one.
+concurrency:
+  group: smoke-staging-${{ github.event_name == 'push' && 'deploy' || 'other' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke test staging
+    # Skipped until staging is set up (docs/staging.md).
+    if: vars.STAGING_API_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install httpx
+        run: pip install httpx==0.27.2
+
+      - name: Run smoke test
+        working-directory: backend
+        env:
+          API_URL: ${{ vars.STAGING_API_URL }}
+          SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          # Scheduled and manual runs check whatever is deployed.
+          EXPECT_COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
+        run: python scripts/smoke.py

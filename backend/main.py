@@ -133,6 +133,8 @@ app = FastAPI(
 )
 
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+# Staging only: Vercel gives every preview its own URL, so a fixed list can't cover them.
+cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
 
 # Must be added before CORSMiddleware: the last-added middleware is outermost, so
 # CORS wraps this and its 429s keep their CORS headers. Covered in test_rate_limit.py.
@@ -146,6 +148,7 @@ app.add_middleware(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -405,6 +408,8 @@ async def health_check():
         "database": db_status,
         "schema_ready": schema_ready,
         "account_deletion_configured": get_admin_client() is not None,
+        # The smoke test waits for this to match the commit it is checking.
+        "commit": os.getenv("RENDER_GIT_COMMIT") or None,
         **(
             {}
             if schema_ready

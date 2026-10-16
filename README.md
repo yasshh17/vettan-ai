@@ -238,7 +238,7 @@ vettan-ai/
 │   │   │   └── supabase/            # Browser, server and middleware clients
 │   │   ├── middleware.ts            # Session refresh + route protection
 │   │   └── __tests__/               # Vitest: security + unit regression tests
-│   ├── vercel.json                  # /api/backend/* → Render rewrite
+│   ├── vercel.json                  # Vercel build settings
 │   └── package.json
 │
 ├── backend/                         # FastAPI + Python 3.11 (Render)
@@ -520,33 +520,10 @@ npm test
 
 ### Supabase Database Setup
 
-The tables are `research_sessions` and `messages` (an older draft of this README
-described a `conversations` table that was never built).
-
-```sql
-CREATE TABLE research_sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  query TEXT NOT NULL,
-  query_hash TEXT,
-  report TEXT,
-  citations JSONB,
-  metadata JSONB,
-  is_favorite BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id UUID REFERENCES research_sessions(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-  content TEXT NOT NULL,
-  citations JSONB,
-  metadata JSONB,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-```
+The tables are `research_sessions` and `messages`, created by
+[`0000_base_schema.sql`](supabase/migrations/0000_base_schema.sql). Production also has
+two empty legacy tables, `conversations` and `audio_cache`, that nothing uses, and a
+duplicate cascade FK on `messages.session_id` (`fk_messages_session`).
 
 #### Tenant isolation
 
@@ -556,6 +533,7 @@ than copying DDL from this README:
 
 | Migration | What it does | When to apply |
 |---|---|---|
+| `0000_base_schema.sql` | Creates `research_sessions` and `messages` as production has them | Fresh projects only (a no-op on production) |
 | `0001_add_user_id.sql` | Adds `research_sessions.user_id`, the FK cascades and the indexes | Non-breaking; apply first |
 | `0002_backfill_legacy_sessions.sql` | Assigns pre-auth rows (`user_id is null`) to their owner | After `0001`, before `0003` — otherwise those rows become invisible to everyone |
 | `0003_enable_rls.sql` | Enables RLS and adds `auth.uid()` policies on both tables | **Only after** the backend that forwards the caller's JWT is deployed |
@@ -909,12 +887,16 @@ pip-audit      # Backend dependencies
 
 ## Deployment
 
+Once staging is set up, `main` deploys to staging and production deploys from the
+`release` branch after the staging smoke test passes. Until then, production still
+deploys from `main`. Setup and the release steps are in [docs/staging.md](docs/staging.md).
+
 ### Production Deployment Guide
 
 #### **1. Frontend Deployment (Vercel)**
 ```bash
 # Automatic via GitHub integration
-# Every push to main branch auto-deploys
+# Production deploys from the release branch once staging is set up (docs/staging.md)
 
 # Manual deployment (if needed):
 cd frontend
@@ -945,7 +927,7 @@ NEXT_PUBLIC_API_URL=https://vettan-ai.onrender.com
 # 2. Select "vettan-ai" repository
 # 3. Root Directory: backend
 # 4. Language: Python 3
-# 5. Branch: main
+# 5. Branch: release once staging is set up (main until then)
 # 6. Build Command: pip install -r requirements.txt
 # 7. Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
