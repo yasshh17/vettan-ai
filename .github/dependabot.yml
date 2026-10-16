@@ -21,6 +21,12 @@ updates:
       routine-updates:
         update-types: ["minor", "patch"]
 
+  # Backend base image (the digest pinned in backend/Dockerfile)
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+
   # GitHub Actions themselves (e.g. actions/checkout, gitleaks-action)
   - package-ecosystem: "github-actions"
     directory: "/"

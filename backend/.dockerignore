@@ -1,0 +1,16 @@
+# Secrets must never end up in the image.
+.env
+.env.*
+*.env
+
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+tests/
+benchmarks/
+requirements-dev.txt
+Dockerfile
+.dockerignore
