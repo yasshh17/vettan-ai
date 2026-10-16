@@ -1,0 +1,16 @@
+# Local backend + Redis, the same shape as production.
+#   docker compose up --build
+services:
+  redis:
+    image: redis:7-alpine
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file: backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+    depends_on:
+      - redis

@@ -259,8 +259,11 @@ vettan-ai/
 │   │   └── token_tracker.py         # Token and cost accounting
 │   ├── tests/                       # Isolation, rate limit, spend, moderation tests
 │   ├── requirements.txt
+│   ├── Dockerfile                   # Container image (CI builds it; Render still uses the Procfile)
 │   ├── runtime.txt
 │   └── Procfile
+│
+├── docker-compose.yml               # Local backend + Redis
 │
 ├── supabase/migrations/             # Schema, RLS, spend guard, profiles
 └── .github/workflows/ci.yml         # Type-check, tests, build, audit, secret scan
@@ -430,6 +433,20 @@ npm run dev
 ```
 
 **Vettan AI is now running locally!**
+
+### Run the backend with Docker
+
+`docker-compose.yml` runs the backend and a Redis, so rate limits are shared the
+way they are in production. Keys come from `backend/.env`; nothing is copied
+into the image.
+
+```bash
+docker compose up --build
+curl localhost:8000/health
+```
+
+Set `WEB_CONCURRENCY=2` to run two workers. Render still deploys from the
+`Procfile`; the image is built and checked in CI on every PR.
 
 ---
 
