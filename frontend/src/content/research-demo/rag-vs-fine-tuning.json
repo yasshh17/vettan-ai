@@ -1,0 +1,114 @@
+{
+  "label": "Recorded example · real output · replayed",
+  "query": "RAG vs fine-tuning: Which should a small team choose?",
+  "recordedAt": "2026-10-19T08:59:35.129Z",
+  "subQueries": [
+    "RAG vs fine-tuning for small teams",
+    "cost-effectiveness of RAG systems 2025",
+    "performance comparison RAG fine-tuning",
+    "best practices for implementing RAG"
+  ],
+  "search": {
+    "planned": 4,
+    "succeeded": 4,
+    "selectedSources": 5,
+    "cacheHit": false
+  },
+  "sources": [
+    {
+      "rank": 1,
+      "domain": "arxiv.org",
+      "url": "https://arxiv.org/html/2505.15179v1"
+    },
+    {
+      "rank": 2,
+      "domain": "orkes.io",
+      "url": "https://orkes.io/blog/rag-best-practices"
+    },
+    {
+      "rank": 3,
+      "domain": "montecarlo.ai",
+      "url": "https://montecarlo.ai/blog-rag-vs-fine-tuning"
+    },
+    {
+      "rank": 4,
+      "domain": "www.ibm.com",
+      "url": "https://www.ibm.com/think/topics/rag-vs-fine-tuning"
+    },
+    {
+      "rank": 5,
+      "domain": "www.matillion.com",
+      "url": "https://www.matillion.com/blog/rag-vs-fine-tuning-enterprise-ai-strategy-guide"
+    }
+  ],
+  "report": {
+    "markdown": "**RAG vs fine-tuning: Which should a small team choose?**\n\n**Overview of RAG vs. Fine-Tuning for Small Teams**\n\nFor small teams looking to leverage AI capabilities, the choice between Retrieval-Augmented Generation (RAG) and fine-tuning large language models (LLMs) hinges on resource availability, implementation complexity, and desired outcomes. RAG is increasingly favored for its accessibility and cost-effectiveness, allowing teams to utilize existing documents and databases without the need for extensive infrastructure or machine learning expertise. In contrast, fine-tuning, while potentially yielding high accuracy on domain-specific tasks, demands significant computational resources and expertise, making it less practical for smaller teams.\n\n**Understanding RAG and Its Advantages**\n\nRAG enhances LLMs by connecting them to an organization’s proprietary databases, enabling the retrieval of relevant information at query time. This method allows for more accurate and contextually relevant responses, as it leverages internal data that would otherwise be inaccessible to the model [Source: ibm.com](https://www.ibm.com/think/topics/rag-vs-fine-tuning). Notably, RAG requires minimal training time beyond the initial indexing of documents, making it particularly attractive for small teams that may lack the resources for extensive model training [Source: montecarlo.ai](https://montecarlo.ai/blog-rag-vs-fine-tuning).\n\nThe implementation of RAG systems involves building data pipelines, indexing in vector databases, and maintaining a search mechanism. While this infrastructure can be complex, it is often more manageable for small teams compared to the demands of fine-tuning [Source: orkeso.io](https://orkes.io/blog/rag-best-practices). Additionally, RAG systems can be optimized for speed, making them suitable for real-time applications, although fine-tuned models may still offer lower latency in specific high-volume scenarios [Source: matillion.com](https://www.matillion.com/blog/rag-vs-fine-tuning-enterprise-ai-strategy-guide).\n\n**The Case for Fine-Tuning**\n\nFine-tuning involves retraining a model on a specific dataset to improve performance on targeted tasks. This method can achieve very high accuracy, particularly in narrow applications where sufficient training data is available [Source: montecarlo.ai](https://montecarlo.ai/blog-rag-vs-fine-tuning). However, the process is resource-intensive, requiring a robust machine learning pipeline, labeled datasets, and significant computational power, which can be prohibitive for smaller teams [Source: ibm.com](https://www.ibm.com/think/topics/rag-vs-fine-tuning).\n\nWhile fine-tuning may produce superior results in specific contexts, it typically demands a level of expertise and infrastructure that many small teams may not possess. For example, fine-tuned models can deliver faster and more accurate responses in high-volume applications, but the setup and maintenance costs can outweigh the benefits for teams without dedicated ML resources [Source: matillion.com](https://www.matillion.com/blog/rag-vs-fine-tuning-enterprise-ai-strategy-guide).\n\n**Combining Approaches for Optimal Results**\n\nRecent studies suggest that combining RAG with fine-tuning can yield the best performance outcomes. For instance, models that integrate both strategies have shown improvements in evaluation metrics such as exact match and BLEU scores, outperforming models that utilize either approach alone [Source: arxiv.org](https://arxiv.org/html/2505.15179v1). This hybrid approach allows teams to leverage the strengths of both methods, achieving high accuracy while still utilizing the flexibility and lower resource demands of RAG.\n\n**Key Takeaways**\n\n- **RAG is more accessible** for small teams, requiring less infrastructure and expertise compared to fine-tuning.\n- **Fine-tuning offers high accuracy** for specific tasks but demands significant resources and expertise.\n- **Combining RAG and fine-tuning** can yield superior performance, making it a viable strategy for teams that can afford the complexity.\n- Ultimately, the choice should align with the team's goals, available resources, and the specific use cases they aim to address."
+  },
+  "timing": {
+    "pipeline_s": {
+      "decomposition": 3.1,
+      "search": 2.8,
+      "ttft": 1.2,
+      "synthesis": 10.7,
+      "total": 16.5
+    },
+    "request_s": {
+      "total": 20.16,
+      "checkCache": 0.31,
+      "moderationInput": 0.83,
+      "moderationOutput": 0.96,
+      "dbSave": 1.38
+    }
+  },
+  "backendLog": [
+    {
+      "at": "2026-10-19T08:59:35.129Z",
+      "event": "request_received"
+    },
+    {
+      "at": "2026-10-19T08:59:36.408Z",
+      "event": "stream_response_started"
+    },
+    {
+      "at": "2026-10-19T08:59:39.481Z",
+      "event": "decomposed"
+    },
+    {
+      "at": "2026-10-19T08:59:42.263Z",
+      "event": "search_done"
+    },
+    {
+      "at": "2026-10-19T08:59:52.948Z",
+      "event": "synthesis_complete"
+    },
+    {
+      "at": "2026-10-19T08:59:55.281Z",
+      "event": "session_saved"
+    },
+    {
+      "at": "2026-10-19T08:59:55.284Z",
+      "event": "request_complete"
+    }
+  ],
+  "derived": {
+    "pipelineStartApprox": "2026-10-19T08:59:36.38Z",
+    "firstTokenApprox": "2026-10-19T08:59:43.46Z"
+  },
+  "provenance": {
+    "observed": "Local Docker backend log and the exported report from the 2026-10-19 run. Sources are in pipeline relevance order; domains are URL hosts as the backend records them.",
+    "notes": [
+      "checkCache and moderationInput ran in parallel; never add them together.",
+      "pipeline_s.total and request_s.total measure different scopes; never add them together.",
+      "backendLog times are server log times, not client arrival times.",
+      "report.markdown is the exported body verbatim; the export's page title and source list are UI chrome and are excluded."
+    ]
+  },
+  "missing": [
+    "source titles",
+    "relevance scores",
+    "which sub-query found which source",
+    "client-side SSE arrival times",
+    "token stream",
+    "exact first-token timestamp"
+  ]
+}

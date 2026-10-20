@@ -507,3 +507,100 @@
     box-shadow: none !important;
   }
 }
+
+/* Landing v2 (preview route). Tokens from the Vettan design system. */
+@theme {
+  --color-v-ground: #09090c;
+  --color-v-panel: #0d0d12;
+  --color-v-surface-1: rgb(255 255 255 / 0.02);
+  --color-v-surface-2: rgb(255 255 255 / 0.05);
+  --color-v-line-1: rgb(255 255 255 / 0.06);
+  --color-v-line-2: rgb(255 255 255 / 0.08);
+  --color-v-line-3: rgb(255 255 255 / 0.12);
+  --color-v-line-hover: rgb(255 255 255 / 0.25);
+  --color-v-ink-1: #ededf2;
+  --color-v-ink-body: #d6d6de;
+  --color-v-ink-2: #a6a6b3;
+  --color-v-ink-3: #9b9ba8;
+  --color-v-ink-4: #8a8a96;
+  --color-v-ink-faint: #3a3a44;
+  --color-v-violet-500: #7c6ff0;
+  --color-v-violet-400: #9c90ff;
+  --color-v-violet-300: #b6acff;
+  --color-v-violet-200: #c9c2ff;
+  --color-v-violet-100: #d6d0ff;
+  --color-v-on-violet: #0b0b10;
+  --color-v-wash: rgb(124 111 240 / 0.1);
+  --color-v-wash-2: rgb(124 111 240 / 0.18);
+  --color-v-accent-line: rgb(124 111 240 / 0.28);
+  --color-v-accent-line-2: rgb(124 111 240 / 0.55);
+  --radius-v-chip: 6px;
+  --radius-v-control: 8px;
+  --radius-v-button: 10px;
+  --radius-v-card: 14px;
+  --radius-v-panel: 16px;
+  --shadow-v-panel: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 24px 60px rgb(0 0 0 / 0.45);
+  --shadow-v-lift: 0 12px 32px rgb(0 0 0 / 0.35);
+  --shadow-v-glow: 0 10px 30px rgb(124 111 240 / 0.4);
+}
+
+/* next/font sets these on <body>, so resolve them where they're used. */
+@theme inline {
+  --font-v-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-v-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* Fallback until the nav measures the header; hash links use it as their scroll margin. */
+.lv2 {
+  --header-clear: 81px;
+}
+
+.lv2 :focus-visible {
+  outline: 2px solid var(--color-v-violet-300);
+  outline-offset: 2px;
+}
+
+/* The question field shows its ring on the wrapper, around the input and its button. */
+.lv2 .lv2-field:has(input:focus-visible) {
+  outline: 2px solid var(--color-v-violet-300);
+  outline-offset: 2px;
+}
+
+.lv2 .lv2-field input:focus-visible {
+  outline: none;
+}
+
+@keyframes lv2-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Opacity only, so the headline paints on the first frame for LCP. */
+.lv2-fade {
+  animation: lv2-fade 300ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lv2-fade {
+    animation: none;
+  }
+
+  /* Staged demo content shows its final state without waiting for JS. */
+  .lv2 [data-lv2-step] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Delays too: the staged poses carry their own, up to 950ms. */
+  .lv2 *,
+  .lv2 *::before,
+  .lv2 *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
