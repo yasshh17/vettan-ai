@@ -36,8 +36,13 @@ interface StickySearchBarProps {
    * A rejected query re-delivered by the page to whichever instance is mounted now: a
    * first query's hero bar is replaced by the docked bar before the refusal arrives.
    */
-  restoredQuery?: { text: string; id: number } | null
+  restoredQuery?: { text: string; id: number; pendingId?: string; ifEmpty?: boolean } | null
   onRestoreQuery?: (text: string) => void
+  /**
+   * For a restore with a pendingId: "applied" once the input shows the text, "declined"
+   * when ifEmpty was set and the input already held something.
+   */
+  onRestoredQueryApplied?: (pendingId: string, outcome: "applied" | "declined") => void
 }
 
 export function StickySearchBar({
@@ -51,7 +56,8 @@ export function StickySearchBar({
   abortRef,
   pendingQueryRef,
   restoredQuery,
-  onRestoreQuery
+  onRestoreQuery,
+  onRestoredQueryApplied
 }: StickySearchBarProps) {
   const { toast } = useToast()
   // Read only; clearing here would break under StrictMode's double-invoked initializer.
@@ -72,9 +78,30 @@ export function StickySearchBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Read inside the restore effect without re-running it on every keystroke.
+  const queryRef = useRef(query)
+  queryRef.current = query
+  const ackedRestoreRef = useRef<number | null>(null)
+
   useEffect(() => {
-    if (restoredQuery) setQuery(restoredQuery.text)
+    if (!restoredQuery) return
+    if (restoredQuery.ifEmpty && queryRef.current.trim()) {
+      // Never overwrite what's already typed.
+      ackedRestoreRef.current = restoredQuery.id
+      if (restoredQuery.pendingId) onRestoredQueryApplied?.(restoredQuery.pendingId, "declined")
+      return
+    }
+    setQuery(restoredQuery.text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoredQuery])
+
+  // Confirmed against the rendered input, so the caller only forgets its copy once it's here.
+  useEffect(() => {
+    if (!restoredQuery?.pendingId || ackedRestoreRef.current === restoredQuery.id) return
+    if (inputRef.current?.value !== restoredQuery.text) return
+    ackedRestoreRef.current = restoredQuery.id
+    onRestoredQueryApplied?.(restoredQuery.pendingId, "applied")
+  }, [query, restoredQuery, onRestoredQueryApplied])
 
   // Puts a rejected query back so it can be edited and resent.
   const restoreQuery = (text: string, isFollowUp: boolean) => {

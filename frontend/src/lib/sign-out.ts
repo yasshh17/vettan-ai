@@ -1,5 +1,6 @@
 import { mutate } from "swr"
 import { createClient } from "@/lib/supabase/client"
+import { forgetQuestionOnThisDevice } from "@/lib/pending-question"
 
 /**
  * Sign out, clear the SWR cache and do a full page load, so nothing from this account
@@ -20,6 +21,9 @@ export async function signOutAndReset(
 
   // Drop every key without refetching.
   await mutate(() => true, undefined, { revalidate: false })
+
+  // A question kept from the landing page belongs to whoever typed it, not the next person here.
+  forgetQuestionOnThisDevice()
 
   window.location.assign(redirectTo)
 }

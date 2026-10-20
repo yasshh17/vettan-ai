@@ -1,0 +1,578 @@
+{
+ "HERO": [
+  {
+   "sub0": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "chk0": "opacity:0;transition:opacity .3s ease 200ms",
+   "sub1": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 60ms, transform .45s cubic-bezier(.22,1,.36,1) 60ms",
+   "chk1": "opacity:0;transition:opacity .3s ease 240ms",
+   "sub2": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 120ms, transform .45s cubic-bezier(.22,1,.36,1) 120ms",
+   "chk2": "opacity:0;transition:opacity .3s ease 280ms",
+   "sub3": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 180ms, transform .45s cubic-bezier(.22,1,.36,1) 180ms",
+   "chk3": "opacity:0;transition:opacity .3s ease 320ms",
+   "src0": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "src1": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 70ms, transform .45s cubic-bezier(.22,1,.36,1) 70ms",
+   "src2": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 140ms, transform .45s cubic-bezier(.22,1,.36,1) 140ms",
+   "src3": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 210ms, transform .45s cubic-bezier(.22,1,.36,1) 210ms",
+   "src4": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 280ms, transform .45s cubic-bezier(.22,1,.36,1) 280ms",
+   "exc": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "skip": "display:none",
+   "replay": "display:inline-flex"
+  },
+  {
+   "sub0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "chk0": "opacity:0;transition:opacity .3s ease 200ms",
+   "sub1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 60ms, transform .45s cubic-bezier(.22,1,.36,1) 60ms",
+   "chk1": "opacity:0;transition:opacity .3s ease 240ms",
+   "sub2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 120ms, transform .45s cubic-bezier(.22,1,.36,1) 120ms",
+   "chk2": "opacity:0;transition:opacity .3s ease 280ms",
+   "sub3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 180ms, transform .45s cubic-bezier(.22,1,.36,1) 180ms",
+   "chk3": "opacity:0;transition:opacity .3s ease 320ms",
+   "src0": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "src1": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 70ms, transform .45s cubic-bezier(.22,1,.36,1) 70ms",
+   "src2": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 140ms, transform .45s cubic-bezier(.22,1,.36,1) 140ms",
+   "src3": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 210ms, transform .45s cubic-bezier(.22,1,.36,1) 210ms",
+   "src4": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 280ms, transform .45s cubic-bezier(.22,1,.36,1) 280ms",
+   "exc": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "skip": "display:inline-flex",
+   "replay": "display:none"
+  },
+  {
+   "sub0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "chk0": "opacity:1;transition:opacity .3s ease 200ms",
+   "sub1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 60ms, transform .45s cubic-bezier(.22,1,.36,1) 60ms",
+   "chk1": "opacity:1;transition:opacity .3s ease 240ms",
+   "sub2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 120ms, transform .45s cubic-bezier(.22,1,.36,1) 120ms",
+   "chk2": "opacity:1;transition:opacity .3s ease 280ms",
+   "sub3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 180ms, transform .45s cubic-bezier(.22,1,.36,1) 180ms",
+   "chk3": "opacity:1;transition:opacity .3s ease 320ms",
+   "src0": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "src1": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 70ms, transform .45s cubic-bezier(.22,1,.36,1) 70ms",
+   "src2": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 140ms, transform .45s cubic-bezier(.22,1,.36,1) 140ms",
+   "src3": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 210ms, transform .45s cubic-bezier(.22,1,.36,1) 210ms",
+   "src4": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 280ms, transform .45s cubic-bezier(.22,1,.36,1) 280ms",
+   "exc": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "skip": "display:inline-flex",
+   "replay": "display:none"
+  },
+  {
+   "sub0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "chk0": "opacity:1;transition:opacity .3s ease 200ms",
+   "sub1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 60ms, transform .45s cubic-bezier(.22,1,.36,1) 60ms",
+   "chk1": "opacity:1;transition:opacity .3s ease 240ms",
+   "sub2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 120ms, transform .45s cubic-bezier(.22,1,.36,1) 120ms",
+   "chk2": "opacity:1;transition:opacity .3s ease 280ms",
+   "sub3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 180ms, transform .45s cubic-bezier(.22,1,.36,1) 180ms",
+   "chk3": "opacity:1;transition:opacity .3s ease 320ms",
+   "src0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "src1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 70ms, transform .45s cubic-bezier(.22,1,.36,1) 70ms",
+   "src2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 140ms, transform .45s cubic-bezier(.22,1,.36,1) 140ms",
+   "src3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 210ms, transform .45s cubic-bezier(.22,1,.36,1) 210ms",
+   "src4": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 280ms, transform .45s cubic-bezier(.22,1,.36,1) 280ms",
+   "exc": "opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "skip": "display:inline-flex",
+   "replay": "display:none"
+  },
+  {
+   "sub0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "chk0": "opacity:1;transition:opacity .3s ease 200ms",
+   "sub1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 60ms, transform .45s cubic-bezier(.22,1,.36,1) 60ms",
+   "chk1": "opacity:1;transition:opacity .3s ease 240ms",
+   "sub2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 120ms, transform .45s cubic-bezier(.22,1,.36,1) 120ms",
+   "chk2": "opacity:1;transition:opacity .3s ease 280ms",
+   "sub3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 180ms, transform .45s cubic-bezier(.22,1,.36,1) 180ms",
+   "chk3": "opacity:1;transition:opacity .3s ease 320ms",
+   "src0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "src1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 70ms, transform .45s cubic-bezier(.22,1,.36,1) 70ms",
+   "src2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 140ms, transform .45s cubic-bezier(.22,1,.36,1) 140ms",
+   "src3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 210ms, transform .45s cubic-bezier(.22,1,.36,1) 210ms",
+   "src4": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 280ms, transform .45s cubic-bezier(.22,1,.36,1) 280ms",
+   "exc": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "skip": "display:inline-flex",
+   "replay": "display:none"
+  },
+  {
+   "sub0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "chk0": "opacity:1;transition:opacity .3s ease 200ms",
+   "sub1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 60ms, transform .45s cubic-bezier(.22,1,.36,1) 60ms",
+   "chk1": "opacity:1;transition:opacity .3s ease 240ms",
+   "sub2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 120ms, transform .45s cubic-bezier(.22,1,.36,1) 120ms",
+   "chk2": "opacity:1;transition:opacity .3s ease 280ms",
+   "sub3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 180ms, transform .45s cubic-bezier(.22,1,.36,1) 180ms",
+   "chk3": "opacity:1;transition:opacity .3s ease 320ms",
+   "src0": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "src1": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 70ms, transform .45s cubic-bezier(.22,1,.36,1) 70ms",
+   "src2": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 140ms, transform .45s cubic-bezier(.22,1,.36,1) 140ms",
+   "src3": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 210ms, transform .45s cubic-bezier(.22,1,.36,1) 210ms",
+   "src4": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 280ms, transform .45s cubic-bezier(.22,1,.36,1) 280ms",
+   "exc": "opacity:1;transform:none;transition:opacity .45s cubic-bezier(.22,1,.36,1) 0ms, transform .45s cubic-bezier(.22,1,.36,1) 0ms",
+   "skip": "display:none",
+   "replay": "display:inline-flex"
+  }
+ ],
+ "STAGE": [
+  {
+   "q": "transform:translate(0px,170px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "sub0": "transform:translate3d(120px,126px,0px) rotateX(12deg) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk0": "opacity:0;transition:opacity .3s ease 0ms",
+   "br0": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub1": "transform:translate3d(120px,188px,0px) rotateX(12deg) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk1": "opacity:0;transition:opacity .3s ease 0ms",
+   "br1": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub2": "transform:translate3d(120px,250px,0px) rotateX(12deg) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk2": "opacity:0;transition:opacity .3s ease 0ms",
+   "br2": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub3": "transform:translate3d(120px,312px,0px) rotateX(12deg) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk3": "opacity:0;transition:opacity .3s ease 0ms",
+   "br3": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "band": "transform:translate(12px,0px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "src0": "transform:translate(284px,130px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th0": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src1": "transform:translate(284px,196px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th1": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src2": "transform:translate(284px,262px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th2": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src3": "transform:translate(284px,328px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th3": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src4": "transform:translate(284px,394px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th4": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "rep": "transform:translate(20px,150px) scale(0.46);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "repSk": "opacity:0;visibility:hidden;transition:opacity .45s ease",
+   "repCt": "opacity:0;visibility:hidden;transition:opacity .45s ease 0ms",
+   "subbar0": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar1": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar2": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar3": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "bandDone": "opacity:0;transition:opacity .3s ease 0ms",
+   "mono0": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono1": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono2": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono3": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono4": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms"
+  },
+  {
+   "q": "transform:translate(0px,0px) scale(0.94);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "sub0": "transform:translate(120px,112px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk0": "opacity:0;transition:opacity .3s ease 0ms",
+   "br0": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub1": "transform:translate(120px,174px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 70ms, opacity .55s cubic-bezier(.22,1,.36,1) 70ms, visibility 0s linear 70ms",
+   "subchk1": "opacity:0;transition:opacity .3s ease 0ms",
+   "br1": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub2": "transform:translate(120px,236px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 140ms, opacity .55s cubic-bezier(.22,1,.36,1) 140ms, visibility 0s linear 140ms",
+   "subchk2": "opacity:0;transition:opacity .3s ease 0ms",
+   "br2": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub3": "transform:translate(120px,298px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 210ms, opacity .55s cubic-bezier(.22,1,.36,1) 210ms, visibility 0s linear 210ms",
+   "subchk3": "opacity:0;transition:opacity .3s ease 0ms",
+   "br3": "stroke-dasharray:320;stroke-dashoffset:320;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "band": "transform:translate(12px,0px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "src0": "transform:translate(284px,130px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th0": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src1": "transform:translate(284px,196px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th1": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src2": "transform:translate(284px,262px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th2": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src3": "transform:translate(284px,328px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th3": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src4": "transform:translate(284px,394px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th4": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "rep": "transform:translate(20px,150px) scale(0.46);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "repSk": "opacity:0;visibility:hidden;transition:opacity .45s ease",
+   "repCt": "opacity:0;visibility:hidden;transition:opacity .45s ease 0ms",
+   "subbar0": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar1": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar2": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar3": "transform:scaleX(0);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "bandDone": "opacity:0;transition:opacity .3s ease 0ms",
+   "mono0": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono1": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono2": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono3": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono4": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms"
+  },
+  {
+   "q": "transform:translate(0px,0px) scale(0.94);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "sub0": "transform:translate(0px,112px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk0": "opacity:1;transition:opacity .3s ease 950ms",
+   "br0": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0.9;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub1": "transform:translate(0px,174px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk1": "opacity:1;transition:opacity .3s ease 950ms",
+   "br1": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0.9;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub2": "transform:translate(0px,236px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk2": "opacity:1;transition:opacity .3s ease 950ms",
+   "br2": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0.9;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub3": "transform:translate(0px,298px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk3": "opacity:1;transition:opacity .3s ease 950ms",
+   "br3": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0.9;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "band": "transform:translate(0px,0px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 250ms, opacity .55s cubic-bezier(.22,1,.36,1) 250ms, visibility 0s linear 250ms",
+   "src0": "transform:translate(284px,130px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th0": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src1": "transform:translate(284px,196px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th1": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src2": "transform:translate(284px,262px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th2": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src3": "transform:translate(284px,328px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th3": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src4": "transform:translate(284px,394px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th4": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "rep": "transform:translate(20px,150px) scale(0.46);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "repSk": "opacity:0;visibility:hidden;transition:opacity .45s ease",
+   "repCt": "opacity:0;visibility:hidden;transition:opacity .45s ease 0ms",
+   "subbar0": "transform:scaleX(1);opacity:1;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar1": "transform:scaleX(1);opacity:1;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar2": "transform:scaleX(1);opacity:1;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar3": "transform:scaleX(1);opacity:1;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "bandDone": "opacity:1;transition:opacity .3s ease 950ms",
+   "mono0": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono1": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono2": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono3": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono4": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms"
+  },
+  {
+   "q": "transform:translate(0px,0px) scale(0.94);opacity:0.55;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "sub0": "transform:translate(-14px,112px) scale(0.9);opacity:0.45;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk0": "opacity:1;transition:opacity .3s ease 0ms",
+   "br0": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub1": "transform:translate(-14px,174px) scale(0.9);opacity:0.45;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk1": "opacity:1;transition:opacity .3s ease 0ms",
+   "br1": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub2": "transform:translate(-14px,236px) scale(0.9);opacity:0.45;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk2": "opacity:1;transition:opacity .3s ease 0ms",
+   "br2": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub3": "transform:translate(-14px,298px) scale(0.9);opacity:0.45;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "subchk3": "opacity:1;transition:opacity .3s ease 0ms",
+   "br3": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "band": "transform:translate(12px,0px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "src0": "transform:translate(284px,112px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "th0": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src1": "transform:translate(284px,178px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 80ms, opacity .55s cubic-bezier(.22,1,.36,1) 80ms, visibility 0s linear 80ms",
+   "th1": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src2": "transform:translate(284px,244px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 160ms, opacity .55s cubic-bezier(.22,1,.36,1) 160ms, visibility 0s linear 160ms",
+   "th2": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src3": "transform:translate(284px,310px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 240ms, opacity .55s cubic-bezier(.22,1,.36,1) 240ms, visibility 0s linear 240ms",
+   "th3": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src4": "transform:translate(284px,376px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 320ms, opacity .55s cubic-bezier(.22,1,.36,1) 320ms, visibility 0s linear 320ms",
+   "th4": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "rep": "transform:translate(20px,150px) scale(0.46);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "repSk": "opacity:0;visibility:hidden;transition:opacity .45s ease",
+   "repCt": "opacity:0;visibility:hidden;transition:opacity .45s ease 0ms",
+   "subbar0": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar1": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar2": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar3": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "bandDone": "opacity:0;transition:opacity .3s ease 0ms",
+   "mono0": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono1": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono2": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono3": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono4": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms"
+  },
+  {
+   "q": "transform:translate(0px,0px) scale(0.94);opacity:0.55;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "sub0": "transform:translate(-14px,112px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk0": "opacity:1;transition:opacity .3s ease 0ms",
+   "br0": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub1": "transform:translate(-14px,174px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk1": "opacity:1;transition:opacity .3s ease 0ms",
+   "br1": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub2": "transform:translate(-14px,236px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk2": "opacity:1;transition:opacity .3s ease 0ms",
+   "br2": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub3": "transform:translate(-14px,298px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk3": "opacity:1;transition:opacity .3s ease 0ms",
+   "br3": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "band": "transform:translate(12px,0px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "src0": "transform:translate(292px,112px) scale(0.92);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th0": "stroke-dasharray:260;stroke-dashoffset:0;opacity:0.6;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 100ms, opacity .45s ease 100ms",
+   "src1": "transform:translate(292px,158px) scale(0.92);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th1": "stroke-dasharray:260;stroke-dashoffset:0;opacity:0.6;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 150ms, opacity .45s ease 150ms",
+   "src2": "transform:translate(292px,204px) scale(0.92);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th2": "stroke-dasharray:260;stroke-dashoffset:0;opacity:0.6;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 200ms, opacity .45s ease 200ms",
+   "src3": "transform:translate(292px,250px) scale(0.92);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th3": "stroke-dasharray:260;stroke-dashoffset:0;opacity:0.6;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 250ms, opacity .45s ease 250ms",
+   "src4": "transform:translate(292px,296px) scale(0.92);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th4": "stroke-dasharray:260;stroke-dashoffset:0;opacity:0.6;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 300ms, opacity .45s ease 300ms",
+   "rep": "transform:translate(20px,150px) scale(0.46);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "repSk": "opacity:1;visibility:visible;transition:opacity .45s ease",
+   "repCt": "opacity:0;visibility:hidden;transition:opacity .45s ease 0ms",
+   "subbar0": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar1": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar2": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar3": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "bandDone": "opacity:0;transition:opacity .3s ease 0ms",
+   "mono0": "opacity:1;visibility:visible;transition:opacity .45s ease 100ms, visibility 0s linear 100ms",
+   "mono1": "opacity:1;visibility:visible;transition:opacity .45s ease 150ms, visibility 0s linear 150ms",
+   "mono2": "opacity:1;visibility:visible;transition:opacity .45s ease 200ms, visibility 0s linear 200ms",
+   "mono3": "opacity:1;visibility:visible;transition:opacity .45s ease 250ms, visibility 0s linear 250ms",
+   "mono4": "opacity:1;visibility:visible;transition:opacity .45s ease 300ms, visibility 0s linear 300ms"
+  },
+  {
+   "q": "transform:translate(0px,0px) scale(0.94);opacity:0.55;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "sub0": "transform:translate(-14px,112px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk0": "opacity:1;transition:opacity .3s ease 0ms",
+   "br0": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub1": "transform:translate(-14px,174px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk1": "opacity:1;transition:opacity .3s ease 0ms",
+   "br1": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub2": "transform:translate(-14px,236px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk2": "opacity:1;transition:opacity .3s ease 0ms",
+   "br2": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "sub3": "transform:translate(-14px,298px) scale(0.9);opacity:0.12;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "subchk3": "opacity:1;transition:opacity .3s ease 0ms",
+   "br3": "stroke-dasharray:320;stroke-dashoffset:0;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "band": "transform:translate(12px,0px) scale(1);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "src0": "transform:translate(274px,300px) scale(0.85);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th0": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src1": "transform:translate(274px,300px) scale(0.85);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th1": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src2": "transform:translate(274px,300px) scale(0.85);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th2": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src3": "transform:translate(274px,300px) scale(0.85);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th3": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "src4": "transform:translate(274px,300px) scale(0.85);opacity:0;visibility:hidden;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 550ms",
+   "th4": "stroke-dasharray:260;stroke-dashoffset:260;opacity:0;transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1) 0ms, opacity .45s ease 0ms",
+   "rep": "transform:translate(20px,92px) scale(1);opacity:1;visibility:visible;transition:transform .55s cubic-bezier(.22,1,.36,1) 0ms, opacity .55s cubic-bezier(.22,1,.36,1) 0ms, visibility 0s linear 0ms",
+   "repSk": "opacity:0;visibility:hidden;transition:opacity .45s ease",
+   "repCt": "opacity:1;visibility:visible;transition:opacity .45s ease 200ms",
+   "subbar0": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar1": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar2": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "subbar3": "transform:scaleX(1);opacity:0;transition:transform .9s cubic-bezier(.22,1,.36,1), opacity .3s ease",
+   "bandDone": "opacity:0;transition:opacity .3s ease 0ms",
+   "mono0": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono1": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono2": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono3": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms",
+   "mono4": "opacity:0;visibility:hidden;transition:opacity .3s ease 0ms, visibility 0s linear 300ms"
+  }
+ ],
+ "STEPS": [
+  {
+   "s0": {
+    "title": "color:#ededf2;transition:color .3s ease",
+    "body": "color:#a6a6b3;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#ededf2"
+   },
+   "s1": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s2": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s3": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s4": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s5": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   }
+  },
+  {
+   "s0": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s1": {
+    "title": "color:#ededf2;transition:color .3s ease",
+    "body": "color:#a6a6b3;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#ededf2"
+   },
+   "s2": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s3": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s4": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s5": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   }
+  },
+  {
+   "s0": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s1": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s2": {
+    "title": "color:#ededf2;transition:color .3s ease",
+    "body": "color:#a6a6b3;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#ededf2"
+   },
+   "s3": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s4": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s5": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   }
+  },
+  {
+   "s0": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s1": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s2": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s3": {
+    "title": "color:#ededf2;transition:color .3s ease",
+    "body": "color:#a6a6b3;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#ededf2"
+   },
+   "s4": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s5": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   }
+  },
+  {
+   "s0": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s1": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s2": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s3": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s4": {
+    "title": "color:#ededf2;transition:color .3s ease",
+    "body": "color:#a6a6b3;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#ededf2"
+   },
+   "s5": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:rgba(255,255,255,0.12);transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   }
+  },
+  {
+   "s0": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s1": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s2": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s3": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s4": {
+    "title": "color:#9b9ba8;transition:color .3s ease",
+    "body": "color:#8a8a96;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#8a8a96"
+   },
+   "s5": {
+    "title": "color:#ededf2;transition:color .3s ease",
+    "body": "color:#a6a6b3;transition:color .3s ease",
+    "bar": "background:#9c90ff;transition:background-color .3s ease",
+    "rail": "color:#ededf2"
+   }
+  }
+ ]
+}
