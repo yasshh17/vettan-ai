@@ -15,6 +15,14 @@ import { ChevronUp } from "lucide-react"
 import ReactMarkdown from 'react-markdown'
 import type { StreamEvent } from "@/lib/research-stream"
 import { authGet, withAuthRedirect } from "@/lib/auth-fetch"
+import {
+  bindDraftTo,
+  claimPendingQuestion,
+  clearPendingQuestion,
+  readPendingQuestion,
+  type PendingQuestion,
+} from "@/lib/pending-question"
+import { createClient } from "@/lib/supabase/client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -195,16 +203,85 @@ export default function Home() {
   // Same reason: a rejected first query remounts the search bar.
   const pendingQueryRef = useRef<string | null>(null)
   // A refused query, re-delivered to whichever search bar is mounted when the refusal arrives.
-  const [restoredQuery, setRestoredQuery] = useState<{ text: string; id: number } | null>(null)
+  const [restoredQuery, setRestoredQuery] = useState<{
+    text: string
+    id: number
+    pendingId?: string
+    ifEmpty?: boolean
+  } | null>(null)
   const restoreQuery = useCallback(
     (text: string) => setRestoredQuery({ text, id: Date.now() }),
     []
   )
+  // A question kept on this device from the landing page. It's only pre-filled, never sent:
+  // the visitor starts the research themselves.
+  const [handoff, setHandoff] = useState<{
+    entry: PendingQuestion
+    outcome: "pending" | "applied" | "declined"
+  } | null>(null)
+  // Set when a saved conversation is opened or a research run starts; cleared by New chat.
+  const conversationStartedRef = useRef(false)
+  // The kept question shown in this view. It's forgotten only once its research has an answer,
+  // so leaving before that (New chat, a past conversation, closing the tab) doesn't lose it.
+  const handoffIdRef = useRef<string | null>(null)
+  const handoffTextRef = useRef("")
+  // True while a run of exactly that question is in flight.
+  const handoffRunRef = useRef(false)
   // Bumped on "New chat" so the hero search bar remounts empty.
   const [searchBarKey, setSearchBarKey] = useState(0)
 
   const hasResults = messages.length > 0
   const firstAnswerIndex = messages.findIndex((m) => m.role === "assistant")
+
+  // Pre-fills an empty new-research view; the search bar won't overwrite a draft and confirms
+  // when it shows the text.
+  const offerPendingQuestion = useCallback(async () => {
+    const found = readPendingQuestion()
+    if (!found) return
+    let userId: string | null = null
+    try {
+      userId = (await createClient().auth.getSession()).data.session?.user?.id ?? null
+    } catch {}
+    if (!userId || conversationStartedRef.current) return
+    // Someone else's question (their session ended here without signing out): never shown.
+    if (found.owner && found.owner !== userId) {
+      clearPendingQuestion(found.id)
+      return
+    }
+    // A question typed while signed out becomes this user's, so no later account sees it.
+    const entry = found.owner ? found : claimPendingQuestion(found.id, userId)
+    if (!entry) return
+    // This tab's landing draft of the same text goes with it.
+    bindDraftTo(entry)
+    handoffIdRef.current = entry.id
+    handoffTextRef.current = entry.text
+    setHandoff({ entry, outcome: "pending" })
+    setRestoredQuery({ text: entry.text, id: Date.now(), pendingId: entry.id, ifEmpty: true })
+  }, [])
+
+  // Once mounted, nothing else loads a conversation on its own, so an idle page can take it.
+  useEffect(() => {
+    if (!conversationStartedRef.current) offerPendingQuestion()
+  }, [offerPendingQuestion])
+
+  const handleRestoredQueryApplied = useCallback(
+    (pendingId: string, outcome: "applied" | "declined") => {
+      // A conversation opened in the meantime: keep the question for later, show nothing.
+      if (conversationStartedRef.current) {
+        setHandoff(null)
+        return
+      }
+      setHandoff((h) => (h && h.entry.id === pendingId ? { ...h, outcome } : h))
+    },
+    []
+  )
+
+  const forgetHandoff = () => {
+    if (handoffIdRef.current) clearPendingQuestion(handoffIdRef.current)
+    handoffIdRef.current = null
+    handoffRunRef.current = false
+    setHandoff(null)
+  }
 
   useEffect(() => {
     setRatings({})
@@ -299,6 +376,13 @@ export default function Home() {
   }
 
   const handleSelectQuery = (query: string, sessionId?: string) => {
+    if (sessionId) {
+      conversationStartedRef.current = true
+      // Still saved for later; just not part of this conversation.
+      handoffIdRef.current = null
+      handoffRunRef.current = false
+    }
+    setHandoff(null)
     setActiveQuery(query)
     // A newly mounted bar would otherwise pick up an earlier refused query.
     setRestoredQuery(null)
@@ -345,6 +429,9 @@ export default function Home() {
       setCurrentSessionId(null)
       pendingQueryRef.current = null
       setSearchBarKey((k) => k + 1)
+      // A fresh view: a question still kept from the homepage is offered again.
+      conversationStartedRef.current = false
+      offerPendingQuestion()
       setTimeout(() => mainContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" }), 0)
     }
   }
@@ -380,7 +467,11 @@ export default function Home() {
   /** Show the question and an empty answer. Every event calls it too, so tokens always have a target. */
   const ensureStreamTarget = useCallback(
     (context: { query: string; isFollowUp: boolean }) => {
+      conversationStartedRef.current = true
       if (streamBufferRef.current) return
+      // An edited or different question leaves the kept one saved.
+      handoffRunRef.current =
+        Boolean(handoffIdRef.current) && !context.isFollowUp && context.query.trim() === handoffTextRef.current
 
       const stamp = Date.now()
       const assistantId = `stream-a-${stamp}`
@@ -527,6 +618,8 @@ export default function Home() {
   )
 
   const handleResultsUpdate = (newResult: ResearchResult & { streamed?: boolean }) => {
+    // The kept question has an answer now (streamed or fallback), so it's done its job.
+    if (handoffRunRef.current) forgetHandoff()
     if (newResult.streamed) {
       if (newResult.session_id) setCurrentSessionId(newResult.session_id)
       return
@@ -603,6 +696,50 @@ export default function Home() {
             </header>
 
             <div className="w-full max-w-[850px] space-y-10">
+              {handoff && handoff.outcome !== "pending" && (
+                <div
+                  role="status"
+                  className="flex items-start justify-between gap-4 rounded-xl border border-neutral-800 bg-neutral-900/60 px-4 py-3"
+                >
+                  {handoff.outcome === "applied" ? (
+                    <div className="min-w-0 text-sm text-neutral-300">
+                      <p>We kept your question from the homepage. Press Enter or Submit research query to begin.</p>
+                      <p className="mt-1 text-neutral-500">
+                        It stays saved on this device until it has an answer.{" "}
+                        <button
+                          type="button"
+                          onClick={forgetHandoff}
+                          className="font-medium text-indigo-300 hover:text-indigo-200"
+                        >
+                          Forget it
+                        </button>
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="min-w-0 text-sm text-neutral-300">
+                      <p>You have a question from the homepage:</p>
+                      <p className="mt-1 break-words text-neutral-100">{handoff.entry.text}</p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRestoredQuery({ text: handoff.entry.text, id: Date.now(), pendingId: handoff.entry.id })
+                        }
+                        className="mt-2 font-medium text-indigo-300 hover:text-indigo-200"
+                      >
+                        Use question from homepage
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setHandoff(null)}
+                    className="shrink-0 text-sm text-neutral-500 hover:text-neutral-300"
+                    aria-label="Dismiss"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
               <StickySearchBar
                 key={searchBarKey}
                 onResultsUpdate={handleResultsUpdate}
@@ -616,6 +753,7 @@ export default function Home() {
                 pendingQueryRef={pendingQueryRef}
                 restoredQuery={restoredQuery}
                 onRestoreQuery={restoreQuery}
+                onRestoredQueryApplied={handleRestoredQueryApplied}
               />
 
               <div className="space-y-3 animate-in fade-in duration-700 delay-500">
@@ -788,6 +926,7 @@ export default function Home() {
               pendingQueryRef={pendingQueryRef}
               restoredQuery={restoredQuery}
               onRestoreQuery={restoreQuery}
+              onRestoredQueryApplied={handleRestoredQueryApplied}
             />
           </div>
         </div>

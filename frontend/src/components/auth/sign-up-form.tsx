@@ -7,6 +7,7 @@ import { Loader2, MailCheck } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
+import { PendingQuestionNote } from "@/components/auth/pending-question-note"
 import { SignUpConsent } from "@/components/legal/legal-links"
 import {
   validateDateOfBirth,
@@ -104,6 +105,9 @@ export function SignUpForm() {
           </Link>
           .
         </p>
+        <div className="mt-5 w-full">
+          <PendingQuestionNote variant="checkEmail" />
+        </div>
       </AuthCard>
     )
   }
@@ -112,6 +116,8 @@ export function SignUpForm() {
     <>
       <AuthCard>
         <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+          <PendingQuestionNote variant="signUp" />
+
           {formError && (
             <div className="rounded-lg border border-[#f87171]/30 bg-[#1e1a1a] px-4 py-3 text-[14px] text-[#f87171]">
               {formError}

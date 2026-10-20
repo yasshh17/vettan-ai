@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { CheckCircle2, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { forgetQuestionOnThisDevice } from "@/lib/pending-question"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
 import { validatePassword, validatePasswordConfirmation } from "@/components/auth/validation"
@@ -55,6 +56,8 @@ export function ResetPasswordForm() {
       }
 
       await supabase.auth.signOut({ scope: "global" })
+      // Same as every other sign-out: nothing from this visitor's question stays on the device.
+      forgetQuestionOnThisDevice()
       setStatus("success")
     } catch {
       setFormError("Something went wrong. Please try again.")

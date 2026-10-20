@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
+import { PendingQuestionNote } from "@/components/auth/pending-question-note"
 import { validateEmail, validateSignInPassword } from "@/components/auth/validation"
 
 export function SignInForm({ initialError = "" }: { initialError?: string }) {
@@ -80,6 +81,8 @@ export function SignInForm({ initialError = "" }: { initialError?: string }) {
     <>
       <AuthCard>
         <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+          <PendingQuestionNote variant="signIn" />
+
           {formError && (
             <div className="rounded-lg border border-[#f87171]/30 bg-[#1e1a1a] px-4 py-3 text-[14px] text-[#f87171]">
               {formError}
