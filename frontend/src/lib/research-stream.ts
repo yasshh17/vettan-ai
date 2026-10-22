@@ -54,24 +54,37 @@ function parseFrame(frame: string): StreamEvent | null {
   }
 }
 
+/**
+ * beforeOpen: the stream never opened, so the server didn't start or charge for the run.
+ * Only then is retrying on /api/research safe.
+ */
+export type StreamError = Error & { status?: number; beforeOpen?: boolean }
+
 /** Yields events from /api/research/stream. Aborting stops the answer and nothing is saved. */
 export async function* streamResearch(
   payload: ResearchPayload,
   signal?: AbortSignal
 ): AsyncGenerator<StreamEvent> {
-  const response = await authFetch(`${API_URL}/api/research/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal
-  })
+  let response: Response
+  try {
+    response = await authFetch(`${API_URL}/api/research/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal
+    })
+  } catch (err) {
+    // fetch() rejects with a TypeError when it can't connect. Refusals keep their own types.
+    if (err instanceof TypeError && !signal?.aborted) (err as StreamError).beforeOpen = true
+    throw err
+  }
 
-  // 429s were already thrown by authFetch. Keep the status for callers deciding on a retry.
+  // 429s were already thrown by authFetch. The server only answers non-OK before the
+  // stream starts, so nothing was charged.
   if (!response.ok || !response.body) {
-    const error = new Error(`Stream request failed (${response.status})`) as Error & {
-      status?: number
-    }
+    const error = new Error(`Stream request failed (${response.status})`) as StreamError
     error.status = response.status
+    error.beforeOpen = true
     throw error
   }
 

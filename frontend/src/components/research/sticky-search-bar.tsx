@@ -4,11 +4,17 @@ import { useState, useRef, useEffect } from "react"
 import { ArrowUp, Square, Mic, AudioWaveform } from "lucide-react"
 import { refreshHistory, confirmSessionSaved } from "@/lib/api"
 import { authPost, ContentBlockedError, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
-import { streamResearch, type StreamEvent } from "@/lib/research-stream"
+import { streamResearch, type StreamError, type StreamEvent } from "@/lib/research-stream"
 import { useToast } from "@/hooks/use-toast"
 import { isSupportMessage } from "@/components/research/refusal-banner"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error && err.message
+    ? err.message
+    : "Could not reach the research service. Check your connection and try again."
+}
 
 declare global {
   interface Window {
@@ -232,9 +238,14 @@ export function StickySearchBar({
         onStreamEvent?.({ type: "error", message: err.message }, context)
         toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
         restoreQuery(submitted, isFollowUp)
+      } else if ((err as StreamError)?.beforeOpen) {
+        console.error("Streaming unavailable, falling back to /api/research:", err)
+        await runWithoutStreaming(payload, context, err, controller.signal)
       } else {
-        console.error("Streaming failed, falling back to /api/research:", err)
-        await runWithoutStreaming(payload, context, err)
+        // The server already ran this question and charged for it; a retry would pay twice.
+        console.error("Stream failed after it started:", err)
+        onStreamEvent?.({ type: "error", message: errorMessage(err) }, context)
+        restoreQuery(submitted, isFollowUp)
       }
     } finally {
       // Don't clear a newer stream's controller.
@@ -243,14 +254,20 @@ export function StickySearchBar({
     }
   }
 
-  /** Non-streaming fallback when the stream fails. */
+  /**
+   * Non-streaming fallback when the stream fails. Takes the same AbortSignal as the stream
+   * attempt, so Stop cancels this request too: aborting the browser request stops it from
+   * updating the UI with a late response and lets the question be retried, but it only reaches
+   * as far as the browser — it doesn't confirm whether the backend's run (or its charge) stopped.
+   */
   const runWithoutStreaming = async (
     payload: Record<string, any>,
     context: { query: string; isFollowUp: boolean },
-    streamError: unknown
+    streamError: unknown,
+    signal?: AbortSignal
   ) => {
     try {
-      const data = await authPost<any>(`${API_URL}/api/research`, payload)
+      const data = await authPost<any>(`${API_URL}/api/research`, payload, { signal })
       if (context.isFollowUp) data.session_id = currentSessionId
       onStreamEvent?.({ type: "token", text: data.output }, context)
       onStreamEvent?.(
@@ -265,6 +282,11 @@ export function StickySearchBar({
       onResultsUpdate(data)
       refreshHistory()
     } catch (err) {
+      // An aborted request isn't a refusal; check it before those branches.
+      if (signal?.aborted) {
+        onStreamEvent?.({ type: "aborted" }, context)
+        return
+      }
       console.error("Research failed:", err)
       // A refusal is the clearer message; otherwise report the original stream error.
       if (err instanceof ContentBlockedError) {
@@ -275,11 +297,7 @@ export function StickySearchBar({
         toast({ title: limitTitle(err), description: err.message, variant: "destructive" })
         restoreQuery(context.query, context.isFollowUp)
       } else {
-        const message =
-          streamError instanceof Error && streamError.message
-            ? streamError.message
-            : "Could not reach the research service. Check your connection and try again."
-        onStreamEvent?.({ type: "error", message }, context)
+        onStreamEvent?.({ type: "error", message: errorMessage(streamError) }, context)
       }
     }
   }

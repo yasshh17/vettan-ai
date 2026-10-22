@@ -43,6 +43,10 @@ interface Message {
   citations?: Citation[]
   metadata?: any
   created_at: string
+  // Set when a stream ended (error or abort) after some text had already arrived: the content
+  // is real but cut short, so it must not be presented the same as a finished report.
+  incomplete?: boolean
+  incompleteReason?: string
 }
 
 interface ResearchResult {
@@ -137,10 +141,16 @@ const MessageRow = memo(function MessageRow({
                 <CollapsibleSources sources={message.citations} />
               </div>
             )}
+
+            {message.incomplete && (
+              <p className="mt-4 pt-3 border-t border-amber-900/30 text-sm text-amber-400/90">
+                ⚠ This answer is incomplete{message.incompleteReason ? `: ${message.incompleteReason}` : "."}
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        {!isStreaming && (
+        {!isStreaming && !message.incomplete && (
           <div className="mt-2 flex justify-end">
             <AnswerFeedback
               sessionId={sessionId}
@@ -151,7 +161,7 @@ const MessageRow = memo(function MessageRow({
           </div>
         )}
 
-        {isLastAssistant && !isStreaming && (
+        {isLastAssistant && !isStreaming && !message.incomplete && (
           <div className="mt-5 space-y-4">
             <AudioPlayer text={message.content} />
             {message.metadata && !message.metadata.error && (
@@ -173,6 +183,9 @@ const MessageRow = memo(function MessageRow({
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  // True only while a saved session's messages are being fetched (a plain GET, no research
+  // running), so the "Researching..." panel can tell the two apart instead of showing for both.
+  const [isLoadingSession, setIsLoadingSession] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   // The answer is shown but wasn't saved: a warning, not an error.
@@ -388,7 +401,15 @@ export default function Home() {
     setRestoredQuery(null)
 
     if (sessionId) {
+      // Switching to a different chat: drop any query kept for the old one (e.g. a failed question
+      // put back for retry) and remount the bar, so it can't be sent as a follow-up here.
+      // Reselecting the open chat keeps the draft.
+      if (sessionId !== currentSessionId) {
+        pendingQueryRef.current = null
+        setSearchBarKey((k) => k + 1)
+      }
       setIsLoading(true)
+      setIsLoadingSession(true)
       setError(null)
       setRefusal(null)
       setCurrentSessionId(sessionId)
@@ -421,7 +442,10 @@ export default function Home() {
           console.error("Failed to load session:", err)
           setError("Failed to load conversation")
         })
-        .finally(() => setIsLoading(false))
+        .finally(() => {
+          setIsLoading(false)
+          setIsLoadingSession(false)
+        })
     } else {
       setMessages([])
       setError(null)
@@ -573,8 +597,17 @@ export default function Home() {
         case "error": {
           const buffered = streamBufferRef.current
           flushStream()
-          if (buffered && !buffered.text) {
-            setMessages((prev) => prev.filter((m) => m.id !== buffered.id))
+          if (buffered) {
+            if (!buffered.text) {
+              setMessages((prev) => prev.filter((m) => m.id !== buffered.id))
+            } else {
+              // Real, partial text: keep it, but mark it so it's never shown as a finished answer.
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === buffered.id ? { ...m, incomplete: true, incompleteReason: event.message } : m
+                )
+              )
+            }
           }
           setError(event.message)
           endStream()
@@ -606,7 +639,10 @@ export default function Home() {
           flushStream()
           if (buffered && !buffered.text) {
             setMessages((prev) => prev.filter((m) => m.id !== buffered.id))
-          } else {
+          } else if (buffered) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === buffered.id ? { ...m, incomplete: true } : m))
+            )
             setError("Stopped. This partial answer was not saved.")
           }
           endStream()
@@ -760,9 +796,9 @@ export default function Home() {
                 <p className="text-sm text-neutral-500 text-center">Try asking:</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {[
-                    "Best AI browsers in 2025",
+                    "Best AI browsers right now",
                     "How do RAG systems work?",
-                    "AI investment trends 2025",
+                    "AI investment trends to watch",
                     "Cancer vaccine developments"
                   ].map((prompt, i) => (
                     <button
@@ -795,7 +831,7 @@ export default function Home() {
           <div className="max-w-5xl mx-auto px-8 pt-8">
             <ActiveChatHeader title={activeQuery} isVisible={hasResults} />
 
-            {isLoading && !hasStreamedText && (
+            {isLoading && !hasStreamedText && !isLoadingSession && (
               <div className="text-center py-24 animate-in fade-in duration-300">
                 <div className="relative inline-block mb-8">
                   <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 opacity-20 blur-xl animate-pulse" />
@@ -915,6 +951,7 @@ export default function Home() {
         >
           <div className="max-w-[800px] mx-auto px-4">
             <StickySearchBar
+              key={searchBarKey}
               onResultsUpdate={handleResultsUpdate}
               isLoading={isLoading}
               setIsLoading={setIsLoading}
