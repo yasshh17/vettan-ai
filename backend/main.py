@@ -460,6 +460,9 @@ async def _cached_session(db, query: str, user_id: str) -> Optional[Dict[str, An
     report = cached.get('report', '')
     if not (report and len(report) > 100 and 'stopped due to' not in report.lower()):
         return None
+    # Failed runs saved before main.py checked for synthesis errors.
+    if report.startswith("Research synthesis encountered an error"):
+        return None
     return cached
 
 
@@ -533,6 +536,11 @@ async def research(
                 conversation_history=context_history
             )
 
+            # The output is an error message here; don't save it as an answer.
+            if (result.get('analytics') or {}).get('failure_stage') == "synthesis":
+                track.failed("synthesis", analytics=result.get('analytics'))
+                raise HTTPException(status_code=500, detail="Failed to process research request")
+
             ai_content = result['output']
             citations = result.get('citations', [])
 
@@ -603,6 +611,10 @@ async def research(
             )
             track.stage = "pipeline"
             result = await research_complete(request.query)
+            # The output is an error message here; saving it would also cache it for this query.
+            if (result.get('analytics') or {}).get('failure_stage') == "synthesis":
+                track.failed("synthesis", analytics=result.get('analytics'))
+                raise HTTPException(status_code=500, detail="Failed to process research request")
             track.stage = "moderation_output"
             verdict = await moderation.check(result.get('output', ''), "output", user.id)
             if verdict.flagged:

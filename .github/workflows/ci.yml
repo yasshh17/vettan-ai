@@ -96,6 +96,9 @@ jobs:
       - name: Product analytics tests
         run: python tests/test_analytics.py
 
+      - name: Research failure tests
+        run: python tests/test_research_failures.py
+
       - name: Answer feedback tests
         run: python tests/test_feedback.py
 
