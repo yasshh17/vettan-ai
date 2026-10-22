@@ -628,6 +628,7 @@ def _build_followup_messages(
     query: str,
     conversation_history: List[Dict[str, str]]
 ) -> List[Dict[str, str]]:
+    """conversation_history excludes `query`, which is appended last."""
     messages = [
         {
             "role": "system",

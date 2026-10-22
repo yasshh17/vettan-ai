@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Literal, Optional
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import asyncio
@@ -85,6 +86,10 @@ else:
 
 # Daily spend caps. The token buckets limit rate, not total.
 _spend_store = spend_guard.PostgresSpendStore(get_admin_client)
+
+# TTS uses the sync OpenAI client and a long text is several calls in a row. Its own pool
+# keeps that off the default executor, which auth and DB calls share. Extra requests queue.
+_tts_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tts")
 
 _TOO_MANY_IN_FLIGHT = (
     "Too many research requests in progress. Wait for the current one to finish."
@@ -396,7 +401,7 @@ async def health_check():
         schema_ready = bool(db and db.schema_ready)
         # Re-probe so a migration applied since startup shows up without a restart.
         if db and db_status and not schema_ready:
-            schema_ready = db.check_schema()
+            schema_ready = await asyncio.to_thread(db.check_schema)
     except Exception:
         db_status = False
         schema_ready = False
@@ -418,13 +423,13 @@ async def health_check():
     }
 
 
-def _require_schema(db) -> None:
+async def _require_schema(db) -> None:
     """503 if the user_id schema is missing, rather than running paid work that can't be saved."""
     if db is None or db.schema_ready:
         return
 
     # Re-probe so an applied migration takes effect without a restart.
-    if db.check_schema():
+    if await asyncio.to_thread(db.check_schema):
         logger.info("Schema became ready - migration applied; resuming normal service")
         return
 
@@ -485,7 +490,7 @@ async def research(
     )
     try:
         db = _db_for(user)
-        _require_schema(db)
+        await _require_schema(db)
         request_started = time.perf_counter()
         request_started_iso = _now_iso()
 
@@ -522,18 +527,17 @@ async def research(
 
             user_msg = _new_message('user', request.query, created_at=request_started_iso)
 
-            context_history = conversation_history + [user_msg]
-
-            logger.info(f"Context prepared with {len(context_history[-6:])} recent messages")
+            logger.info(f"Context prepared with {len(conversation_history[-6:])} recent messages")
 
             await spend_guard.charge(
                 _spend_store, user.id, "followup", spend_guard.cost_usd("followup")
             )
 
             track.stage = "synthesis"
+            # Earlier messages only: handle_followup appends the question itself.
             result = await handle_followup(
                 query=request.query,
-                conversation_history=context_history
+                conversation_history=conversation_history
             )
 
             # The output is an error message here; don't save it as an answer.
@@ -702,7 +706,7 @@ async def research_stream_endpoint(
         blocked {message}   answer withheld by moderation; drop what was streamed
     """
     db = _db_for(user)
-    _require_schema(db)
+    await _require_schema(db)
     request_started = time.perf_counter()
     request_started_iso = _now_iso()
     is_followup = bool(request.session_id and request.is_followup)
@@ -778,7 +782,7 @@ async def research_stream_endpoint(
                 track.stage = "synthesis"
                 async for event in handle_followup_stream(
                     query=request.query,
-                    conversation_history=history + [user_msg]
+                    conversation_history=history
                 ):
                     if event["type"] == "token":
                         track.mark_first_token()
@@ -962,7 +966,7 @@ async def get_session_messages(
         if not db or not db.is_connected:
             raise HTTPException(status_code=503, detail="Database not connected")
 
-        messages = db.get_conversation_history(session_id, user.id)
+        messages = await asyncio.to_thread(db.get_conversation_history, session_id, user.id)
 
         if not messages:
             logger.warning(f"No messages found for: {session_id[:8]}")
@@ -1030,7 +1034,9 @@ async def generate_audio(
             units=len(speech_text),
         )
 
-        audio_bytes = tts.generate_audio(text=speech_text, voice=request.voice)
+        audio_bytes = await asyncio.get_running_loop().run_in_executor(
+            _tts_executor, tts.generate_audio, speech_text, request.voice
+        )
         
         if not audio_bytes:
             raise HTTPException(status_code=500, detail="Audio generation failed")
@@ -1067,9 +1073,9 @@ async def get_history(
 
         db = _db_for(user)
         # An empty list must mean "no history", never "the query failed".
-        _require_schema(db)
+        await _require_schema(db)
         if db and db.is_connected:
-            sessions = db.get_recent_sessions(user.id, limit=limit)
+            sessions = await asyncio.to_thread(db.get_recent_sessions, user.id, limit=limit)
             
             formatted_sessions = [
                 {
@@ -1109,14 +1115,14 @@ async def get_session(
         if not db or not db.is_connected:
             raise HTTPException(status_code=503, detail="Database not connected")
 
-        session_data = db.get_session_by_id(session_id, user.id)
+        session_data = await asyncio.to_thread(db.get_session_by_id, session_id, user.id)
         if not session_data:
             logger.error(f"Session not found or not owned: {session_id[:8]}")
             raise HTTPException(status_code=404, detail="Session not found")
 
         logger.info(f"Session found: {session_data.get('query', 'N/A')[:50]}")
 
-        messages = db.get_conversation_history(session_id, user.id)
+        messages = await asyncio.to_thread(db.get_conversation_history, session_id, user.id)
         
         if not messages:
             logger.warning(f"No messages found for session: {session_id[:8]}")
@@ -1187,7 +1193,7 @@ async def update_session(
             update_data['is_favorite'] = is_favorite
             logger.info(f"Favorite: {is_favorite}")
         
-        success = db.update_session(session_id, update_data, user.id)
+        success = await asyncio.to_thread(db.update_session, session_id, update_data, user.id)
 
         # False covers both "no such session" and "not yours".
         if not success:
@@ -1274,7 +1280,7 @@ async def delete_account(body: DeleteAccountRequest, user: AuthedUser = Depends(
 
     try:
         logger.info(f"Deleting auth user: {user_id[:8]}...")
-        admin_client.auth.admin.delete_user(user_id)
+        await asyncio.to_thread(admin_client.auth.admin.delete_user, user_id)
         logger.info(f"Auth user deleted: {user_id[:8]}...")
         audit.record("account_deleted", user_id=user_id)
         return {"success": True, "message": "Account deleted"}
@@ -1383,7 +1389,7 @@ async def delete_session(
         if not db or not db.is_connected:
             raise HTTPException(status_code=503, detail="Database not connected")
 
-        success = db.delete_session(session_id, user.id)
+        success = await asyncio.to_thread(db.delete_session, session_id, user.id)
 
         # False covers both "no such session" and "not yours".
         if not success:
