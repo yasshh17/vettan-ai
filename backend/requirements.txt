@@ -1,11 +1,11 @@
 # Core Backend
-fastapi==0.143.0
+fastapi==0.143.5
 uvicorn[standard]==0.54.0
 pydantic==2.14.1
 python-dotenv==1.2.4
 
 # OpenAI
-openai==3.29.0
+openai==3.35.1
 
 # The live research pipeline (agent/research_pipeline.py) calls the Tavily
 # HTTP API directly via httpx, not through the tavily-python SDK. LangChain,
@@ -20,7 +20,7 @@ tiktoken==0.14.0
 
 
 # Database
-supabase==2.32.0
+supabase==2.33.0
 websockets==15.0.1
 
 # Shared rate limits across workers, when REDIS_URL is set.
