@@ -5,6 +5,7 @@ import time
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import AsyncIterator, List, Dict, Any, Optional
 
 import httpx
@@ -109,22 +110,28 @@ Given a research question, generate exactly 3-4 focused search queries that toge
 Rules:
 - Each query must target a DIFFERENT aspect, angle, or dimension of the topic
 - Keep queries concise: 3-8 words each
-- Include the current year (2025) in at least one query for recency
+- If the question is about recent or current developments, include the current year ({year}) in one query
+- If the question names a year, use that year instead
+- Do not add a year to questions about concepts or how something works
 - Prioritize queries that will surface authoritative sources (academic, government, major news)
 - Output ONLY a valid JSON array of strings, nothing else
 
 Examples:
 Input: "Cancer vaccine developments"
-Output: ["mRNA cancer vaccine clinical trials 2025", "personalized cancer vaccine research progress", "cancer immunotherapy combination therapy results", "ARPA-H cancer vaccine funding"]
+Output: ["mRNA cancer vaccine clinical trials {year}", "personalized cancer vaccine research progress", "cancer immunotherapy combination therapy results", "ARPA-H cancer vaccine funding"]
 
-Input: "Best AI browsers in 2025"
-Output: ["AI powered web browsers 2025 review", "Arc browser AI features", "Chrome Gemini AI integration", "AI browser comparison benchmark"]
+Input: "Best AI browsers in 2024"
+Output: ["AI powered web browsers 2024 review", "Arc browser AI features", "Chrome Gemini AI integration", "AI browser comparison benchmark"]
 
 Input: "How do RAG systems work?"
-Output: ["RAG retrieval augmented generation architecture explained", "RAG system components vector database", "RAG vs fine tuning LLM comparison 2025"]
+Output: ["RAG retrieval augmented generation architecture explained", "RAG system components vector database", "RAG vs fine tuning LLM comparison"]
 
 Input: {query}
 Output:"""
+
+
+def _current_year() -> int:
+    return datetime.now(timezone.utc).year
 
 
 async def decompose_query(query: str, stats: Optional[_RunStats] = None) -> List[str]:
@@ -134,7 +141,7 @@ async def decompose_query(query: str, stats: Optional[_RunStats] = None) -> List
         response = await openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "user", "content": DECOMPOSITION_PROMPT.format(query=json.dumps(query))}
+                {"role": "user", "content": DECOMPOSITION_PROMPT.format(query=json.dumps(query), year=_current_year())}
             ],
             temperature=0.2,
             max_tokens=200
