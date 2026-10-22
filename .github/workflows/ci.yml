@@ -102,6 +102,9 @@ jobs:
       - name: Decomposition year tests
         run: python tests/test_decomposition_year.py
 
+      - name: Event loop blocking tests
+        run: python tests/test_event_loop.py
+
       - name: Answer feedback tests
         run: python tests/test_feedback.py
 
