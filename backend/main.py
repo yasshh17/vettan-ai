@@ -527,18 +527,17 @@ async def research(
 
             user_msg = _new_message('user', request.query, created_at=request_started_iso)
 
-            context_history = conversation_history + [user_msg]
-
-            logger.info(f"Context prepared with {len(context_history[-6:])} recent messages")
+            logger.info(f"Context prepared with {len(conversation_history[-6:])} recent messages")
 
             await spend_guard.charge(
                 _spend_store, user.id, "followup", spend_guard.cost_usd("followup")
             )
 
             track.stage = "synthesis"
+            # Earlier messages only: handle_followup appends the question itself.
             result = await handle_followup(
                 query=request.query,
-                conversation_history=context_history
+                conversation_history=conversation_history
             )
 
             # The output is an error message here; don't save it as an answer.
@@ -783,7 +782,7 @@ async def research_stream_endpoint(
                 track.stage = "synthesis"
                 async for event in handle_followup_stream(
                     query=request.query,
-                    conversation_history=history + [user_msg]
+                    conversation_history=history
                 ):
                     if event["type"] == "token":
                         track.mark_first_token()
