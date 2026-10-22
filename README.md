@@ -274,7 +274,8 @@ vettan-ai/
 1. User submits query via sticky search bar
    ↓
 2. Frontend sends POST /api/research/stream with the user's JWT
-   (falls back to /api/research if streaming fails)
+   (falls back to /api/research only if the stream never opens;
+   a failure after that shows an error so the question can be resent)
    ↓
 3. Guards run: rate limits, auth, input moderation, cache check, spend cap
    ↓
@@ -290,6 +291,7 @@ vettan-ai/
 7. Selected source metadata is returned with the report
    ↓
 8. Response + citations persisted to Supabase PostgreSQL
+   (a failed synthesis returns an error and is never saved or cached)
    ↓
 9. The normalized query result is cached for an exact future match
    ↓
@@ -821,8 +823,8 @@ The repository does not currently include a reproducible benchmark suite for lat
 - React.memo for expensive re-renders
 
 **Backend Performance:**
-- Async/await throughout (non-blocking I/O)
-- Parallel web searches with asyncio.gather
+- Blocking Supabase and TTS calls run off the event loop (`asyncio.to_thread`; TTS on its own 4-thread pool)
+- Parallel web searches with a 6s deadline for the batch
 - Exact normalized-query result caching
 - Supabase connection pooling
 - Pydantic validation (fast C-based parsing)
@@ -833,6 +835,7 @@ The repository does not currently include a reproducible benchmark suite for lat
 - Source links show which retrieved pages informed synthesis; they do not prove that every generated claim is supported.
 - The active pipeline uses one language-model synthesis step and should not be described as a multi-agent system.
 - Retrieval quality and citation coverage have not yet been formally evaluated in this repository.
+- Follow-up questions don't search again. They answer from the conversation and can cite links that aren't among its sources.
 
 ---
 
@@ -1031,8 +1034,8 @@ RATE_LIMIT_ACCOUNT_CAPACITY=3
 RATE_LIMIT_ACCOUNT_REFILL_PER_MIN=1
 
 # In-flight cap. A rate limit bounds how often requests start, not how many
-# run at once; a research request holds a threadpool slot plus several
-# upstream connections for its whole duration.
+# run at once; a research request holds several upstream connections for
+# its whole duration.
 RESEARCH_MAX_CONCURRENT_PER_USER=2
 RESEARCH_MAX_CONCURRENT_GLOBAL=8     # per worker
 RESEARCH_SLOT_LEASE_SECONDS=120
