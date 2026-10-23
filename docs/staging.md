@@ -125,6 +125,14 @@ stops writing to production.
 - **Major updates:** merge one at a time. Each needs a green smoke test plus a click-through on the
   staging preview before you promote it.
 
+## First invite checklist
+Production runs on free tiers until real users arrive. On the day you send the first invites:
+- Upgrade the production Supabase project to Pro. The free plan has no backups and pauses after a week
+  without activity.
+- Restore one production backup into the staging project, to prove the backups work.
+- After a week of real traffic, check `/api/admin/analytics/summary` ([analytics](analytics.md)). Its
+  numbers decide when to add Redis, a shared search cache or more workers.
+
 ## Notes
 - The free Render instance sleeps when idle, so the first request takes about a minute. The smoke test
   allows for it.
