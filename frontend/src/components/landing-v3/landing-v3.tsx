@@ -6,7 +6,7 @@ import { LandingNavV3 } from "./nav"
 import { ReportV3 } from "./report/report"
 import { StoryV3 } from "./story/story"
 
-// Landing v3 ("Research Observatory"), behind /preview/observatory and the local LANDING_V3_HOME flag.
+// Landing v3 ("Research Observatory"): the homepage at /.
 // `.lv2` keeps v62's shared rules: focus ring, header clearance and the reduced-motion switch.
 export function LandingV3() {
   return (
