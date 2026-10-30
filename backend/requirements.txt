@@ -21,7 +21,7 @@ tiktoken==0.14.0
 
 # Database
 supabase==2.33.0
-websockets==15.0.1
+websockets==17.3
 
 # Shared rate limits across workers, when REDIS_URL is set.
 redis==8.1.0
