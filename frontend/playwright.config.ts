@@ -38,8 +38,6 @@ export default defineConfig({
       NEXT_PUBLIC_SENTRY_DSN: "",
       SENTRY_AUTH_TOKEN: "",
       LANDING_PREVIEW: "1",
-      // A developer's local v3 switch must not change what / shows under test.
-      LANDING_V3_HOME: "",
       NEXT_TELEMETRY_DISABLED: "1",
     },
   },

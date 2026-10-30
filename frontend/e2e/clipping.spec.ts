@@ -40,11 +40,18 @@ async function clippedContent(page: Page) {
 }
 
 for (const vp of VIEWPORTS) {
-  test(`nothing is cut off at ${vp.width}x${vp.height}, report collapsed and expanded`, async ({ page }) => {
+  test(`nothing is cut off on the homepage at ${vp.width}x${vp.height}`, async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height })
     // Final states, so nothing is mid-animation when measured.
     await page.emulateMedia({ reducedMotion: "reduce" })
     await openLanding(page, "/")
+    expect(await clippedContent(page)).toEqual([])
+  })
+
+  test(`nothing is cut off in v62 at ${vp.width}x${vp.height}, report collapsed and expanded`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height })
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await openLanding(page, "/preview/landing")
     expect(await clippedContent(page)).toEqual([])
     await page.getByRole("button", { name: "Read the full report" }).click()
     await expect(page.getByRole("button", { name: "Show less" })).toBeVisible()

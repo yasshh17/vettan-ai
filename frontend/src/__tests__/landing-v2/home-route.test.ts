@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("@/components/landing-v2/landing-v2", () => ({ LandingV2: () => null }))
 vi.mock("@/components/landing-v3/landing-v3", () => ({ LandingV3: () => null }))
 
 afterEach(() => {
@@ -9,40 +8,26 @@ afterEach(() => {
 })
 
 describe("homepage route", () => {
-  it("renders Landing v62 with the default density, with no preview flag", async () => {
+  it("renders Landing v3, with no preview flag", async () => {
     vi.stubEnv("LANDING_PREVIEW", "")
     const { default: Page } = await import("@/app/page")
-    const { LandingV2 } = await import("@/components/landing-v2/landing-v2")
-    const el = Page()
-    expect(el.type).toBe(LandingV2)
-    expect(el.props).toEqual({ density: "default" })
+    const { LandingV3 } = await import("@/components/landing-v3/landing-v3")
+    expect(Page().type).toBe(LandingV3)
   })
 
   it("renders it on production too: the homepage isn't gated", async () => {
     vi.stubEnv("VERCEL_ENV", "production")
     const { default: Page } = await import("@/app/page")
-    const { LandingV2 } = await import("@/components/landing-v2/landing-v2")
-    expect(Page().type).toBe(LandingV2)
-  })
-
-  it("tries v3 at / only on a developer's machine with LANDING_V3_HOME=1", async () => {
-    const { default: Page } = await import("@/app/page")
-    const { LandingV2 } = await import("@/components/landing-v2/landing-v2")
     const { LandingV3 } = await import("@/components/landing-v3/landing-v3")
-    vi.stubEnv("VERCEL_ENV", "")
-    vi.stubEnv("LANDING_V3_HOME", "1")
     expect(Page().type).toBe(LandingV3)
-    vi.stubEnv("VERCEL_ENV", "preview")
-    expect(Page().type).toBe(LandingV2)
-    vi.stubEnv("VERCEL_ENV", "production")
-    expect(Page().type).toBe(LandingV2)
   })
 
-  it("has indexable metadata without the retired claims", async () => {
+  it("has indexable metadata that says what the pipeline really does", async () => {
     const { metadata } = await import("@/app/page")
     const text = `${metadata.title} ${metadata.description}`
-    expect(metadata.title).toBe("Vettan · Think deeper. Discover faster.")
-    expect(text).not.toMatch(/ReAct|multi-agent|verif/i)
+    expect(metadata.title).toBe("Vettan · Research you can check.")
+    expect(text).toMatch(/reads excerpts from the most relevant pages/)
+    expect(text).not.toMatch(/ReAct|multi-agent|verif|reads the most relevant (sources|pages)/i)
     expect(metadata.robots).toBeUndefined()
   })
 
