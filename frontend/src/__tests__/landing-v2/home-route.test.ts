@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@/components/landing-v2/landing-v2", () => ({ LandingV2: () => null }))
+vi.mock("@/components/landing-v3/landing-v3", () => ({ LandingV3: () => null }))
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -21,6 +22,19 @@ describe("homepage route", () => {
     vi.stubEnv("VERCEL_ENV", "production")
     const { default: Page } = await import("@/app/page")
     const { LandingV2 } = await import("@/components/landing-v2/landing-v2")
+    expect(Page().type).toBe(LandingV2)
+  })
+
+  it("tries v3 at / only on a developer's machine with LANDING_V3_HOME=1", async () => {
+    const { default: Page } = await import("@/app/page")
+    const { LandingV2 } = await import("@/components/landing-v2/landing-v2")
+    const { LandingV3 } = await import("@/components/landing-v3/landing-v3")
+    vi.stubEnv("VERCEL_ENV", "")
+    vi.stubEnv("LANDING_V3_HOME", "1")
+    expect(Page().type).toBe(LandingV3)
+    vi.stubEnv("VERCEL_ENV", "preview")
+    expect(Page().type).toBe(LandingV2)
+    vi.stubEnv("VERCEL_ENV", "production")
     expect(Page().type).toBe(LandingV2)
   })
 

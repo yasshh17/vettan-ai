@@ -48,9 +48,10 @@ export function CitationScope({
     [onSelect, selected]
   )
 
+  const lastCitation = useCallback(() => last.current, [])
   const value = useMemo<Selection>(
-    () => ({ hovered, selected, preview: setHovered, toggle, lastCitation: () => last.current }),
-    [hovered, selected, toggle]
+    () => ({ hovered, selected, preview: setHovered, toggle, lastCitation }),
+    [hovered, selected, toggle, lastCitation]
   )
   return <SelectionContext.Provider value={value}>{children}</SelectionContext.Provider>
 }
@@ -86,6 +87,8 @@ export function CitationButton({ citation }: { citation: Citation }) {
       onBlur={() => preview(null)}
       className={cn(
         "relative mx-0.5 inline-flex items-center rounded-v-chip border px-1.5 align-[1px] text-[11.5px] leading-[1.6] transition-colors duration-150",
+        // A fingertip-sized tap area on touch screens; it never changes the layout.
+        "pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:content-['']",
         active
           ? "border-v-accent-line-2 bg-v-wash-2 text-v-violet-200"
           : "border-v-accent-line bg-v-wash text-v-violet-300 hover:text-v-violet-200"

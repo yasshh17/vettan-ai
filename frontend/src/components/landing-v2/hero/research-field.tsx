@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Check, Copy } from "lucide-react"
+import { ArrowRight, Check, Copy } from "lucide-react"
 import {
   DRAFT_KEY,
   MAX_QUESTION,
@@ -24,9 +24,31 @@ type CopyState = "idle" | "copied" | "selected"
 
 const panel = "mt-3 rounded-v-card border border-v-accent-line bg-v-wash p-4"
 
+// Landing v3 restyles the same field; behaviour is identical in both looks.
+const LOOK = {
+  default: {
+    form: "w-full max-w-[560px]",
+    field:
+      "lv2-field flex flex-col gap-1.5 rounded-[12px] border border-v-line-3 bg-v-surface-2 p-1.5 transition-colors focus-within:border-v-accent-line-2 min-[400px]:flex-row min-[400px]:items-center",
+    button:
+      "inline-flex min-h-11 shrink-0 items-center justify-center rounded-v-button bg-v-violet-400 px-5 text-[14px] font-semibold text-v-on-violet transition-[transform,box-shadow] duration-150 enabled:hover:-translate-y-0.5 enabled:hover:shadow-v-glow enabled:active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45",
+    arrow: false,
+  },
+  observatory: {
+    form: "w-full max-w-[640px] text-left",
+    field:
+      "lv2-field flex flex-col gap-1.5 rounded-[22px] border border-[rgb(182_172_255/0.28)] bg-[rgb(13_13_18/0.86)] p-1.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_30px_80px_rgb(0_0_0/0.6),0_0_60px_rgb(124_111_240/0.12)] transition-colors focus-within:border-v-accent-line-2 min-[400px]:flex-row min-[400px]:items-center min-[400px]:rounded-full min-[400px]:pl-3",
+    // Disabled until there's a question; a muted violet reads as "waiting", not broken.
+    button:
+      "inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-v-violet-400 px-[22px] text-[15px] font-semibold text-v-on-violet transition-[transform,box-shadow,background-color] duration-150 enabled:hover:-translate-y-0.5 enabled:hover:shadow-v-glow enabled:active:translate-y-0 disabled:cursor-not-allowed disabled:bg-[rgb(156_144_255/0.3)] disabled:text-v-ink-2",
+    arrow: true,
+  },
+} as const
+
 // Start research saves the question and hands it to Vettan; it never starts a run by itself.
 // Signed-out visitors are sent to sign in first, signed-in ones to /app with it pre-filled.
-export function ResearchField() {
+export function ResearchField({ appearance = "default" }: { appearance?: keyof typeof LOOK } = {}) {
+  const look = LOOK[appearance]
   const id = useId()
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -131,11 +153,11 @@ export function ResearchField() {
   const signedIn = session === "signedIn"
 
   return (
-    <form onSubmit={submit} noValidate className="w-full max-w-[560px]">
+    <form onSubmit={submit} noValidate className={look.form}>
       <label htmlFor={`${id}-q`} className="sr-only">
         Research question
       </label>
-      <div className="lv2-field flex flex-col gap-1.5 rounded-[12px] border border-v-line-3 bg-v-surface-2 p-1.5 transition-colors focus-within:border-v-accent-line-2 min-[400px]:flex-row min-[400px]:items-center">
+      <div className={look.field}>
         <input
           ref={inputRef}
           id={`${id}-q`}
@@ -151,9 +173,10 @@ export function ResearchField() {
           type="submit"
           disabled={!trimmed}
           aria-busy={status === "busy" || undefined}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-v-button bg-v-violet-400 px-5 text-[14px] font-semibold text-v-on-violet transition-[transform,box-shadow] duration-150 enabled:hover:-translate-y-0.5 enabled:hover:shadow-v-glow enabled:active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45"
+          className={look.button}
         >
           Start research
+          {look.arrow ? <ArrowRight aria-hidden="true" className="size-3.5" strokeWidth={2.4} /> : null}
         </button>
       </div>
       {query.length > MAX_QUESTION - 200 ? (

@@ -6,17 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Volume2, Download, Loader2, Play, Pause, RotateCcw, Sparkles, X } from "lucide-react"
 import { authPost, API_BASE_URL, ContentBlockedError, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
 import { useToast } from "@/hooks/use-toast"
+import { DEFAULT_VOICE, VOICES } from "@/lib/voices"
 
 const API_URL = API_BASE_URL
-
-const VOICES = {
-  nova: "Female, warm, friendly",
-  alloy: "Neutral, balanced",
-  echo: "Male, clear",
-  fable: "British, expressive",
-  onyx: "Deep, authoritative",
-  shimmer: "Female, energetic"
-}
 
 interface AudioPlayerProps {
   text: string
@@ -27,7 +19,7 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [selectedVoice, setSelectedVoice] = useState("nova")
+  const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE)
   const [cost, setCost] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
