@@ -10,7 +10,7 @@
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev/)
 [![Next.js](https://img.shields.io/badge/Next.js-15.0+-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776ab?logo=python&logoColor=white)](https://python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776ab?logo=python&logoColor=white)](https://python.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -241,7 +241,7 @@ vettan-ai/
 │   ├── vercel.json                  # Vercel build settings
 │   └── package.json
 │
-├── backend/                         # FastAPI + Python 3.11 (Render)
+├── backend/                         # FastAPI + Python 3.12 (Render)
 │   ├── main.py                      # App, auth dependency, endpoints, SSE streaming
 │   ├── agent/
 │   │   ├── research_pipeline.py     # Decompose → parallel Tavily search → synthesis
@@ -260,6 +260,7 @@ vettan-ai/
 │   ├── tests/                       # Isolation, rate limit, spend, moderation tests
 │   ├── requirements.txt
 │   ├── Dockerfile                   # Container image (CI builds it; Render still uses the Procfile)
+│   ├── .python-version
 │   ├── runtime.txt
 │   └── Procfile
 │
@@ -342,7 +343,7 @@ vettan-ai/
 ```json
 {
   "framework": "FastAPI 0.109",
-  "language": "Python 3.11",
+  "language": "Python 3.12",
   "server": "Uvicorn (ASGI server with async support)",
   "research_pipeline": "Custom async decomposition, parallel search, ranking, and synthesis",
   "llm": "OpenAI GPT-4o-mini",
@@ -385,7 +386,7 @@ vettan-ai/
 ```bash
 # Required
 node >= 18.0.0
-python >= 3.11
+python 3.12
 postgresql >= 15 (or Supabase account)
 
 ```
@@ -459,7 +460,7 @@ Set `WEB_CONCURRENCY=2` to run two workers. Render still deploys from the
 cd backend
 
 # Create virtual environment
-python3.11 -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate
 
 # Upgrade pip
@@ -955,9 +956,9 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
 web: uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
-`runtime.txt`:
+`.python-version` (Render reads this; `runtime.txt` holds the same version):
 ```
-python-3.11.6
+3.12.15
 ```
 
 **Live API:** `https://vettan-ai.onrender.com`
