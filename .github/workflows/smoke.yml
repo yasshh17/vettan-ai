@@ -44,6 +44,6 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
-          # Scheduled and manual runs check whatever is deployed.
-          EXPECT_COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
+          # Promote trusts a pass for this commit, so every run waits for it to be the deployed one.
+          EXPECT_COMMIT: ${{ github.sha }}
         run: python scripts/smoke.py
