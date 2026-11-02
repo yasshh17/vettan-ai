@@ -112,7 +112,7 @@ Then go to Actions → Staging smoke test → Run workflow. It must pass before 
 ### 6. Switch production to `release`
 1. Go to Actions → Promote to production → Run workflow. The first run creates the `release` branch.
 2. On the Render **production** service, go to Settings → Branch and set it to `release`.
-3. In Vercel, go to Settings → Git → Production Branch and set it to `release`.
+3. In Vercel, go to Settings → Environments → Production → Branch Tracking and set it to `release`.
 4. Don't add branch protection to `release` that requires pull requests, because the promote workflow
    pushes to it directly.
 
@@ -125,7 +125,8 @@ stops writing to production.
 2. If the change touches the frontend, open `https://vettan-ai-git-main-<scope>.vercel.app` and try the
    affected screens. The smoke test only checks the backend.
 3. Go to Actions → **Promote to production** → Run workflow.
-4. Check that production `/health` shows the new `commit`.
+4. If the change touches `backend/`, check that production `/health` shows the new `commit`. Render
+   skips other commits, so for those check the new production deploy in Vercel instead.
    - The first time, also check that both Render and Vercel started a production deploy from `release`.
 
 **Rollback:**
