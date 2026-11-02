@@ -29,10 +29,20 @@ example `yasshh17s-projects`).
 2. In the SQL editor, run these migrations in order: `0000`, `0001`, `0003`, `0004`, `0005`, `0006`,
    `0007`, `0008`, `0009`. **Skip `0002`.** It claims old rows for one production account and stops
    with an error when that account doesn't exist.
+   New Supabase projects don't give the API roles access to new tables, and these migrations don't grant
+   it. After the last migration, run:
+
+   ```sql
+   grant select, insert, update, delete on public.research_sessions, public.messages, public.profiles
+     to anon, authenticated, service_role;
+   grant select, insert, update, delete on public.usage_daily, public.spend_daily,
+     public.analytics_events, public.answer_feedback to service_role;
+   grant usage, select on all sequences in schema public to service_role;
+   ```
 3. Under Authentication → URL Configuration:
    - Set **Site URL** to `https://vettan-ai-git-main-<scope>.vercel.app`.
-   - Add these **Redirect URLs**: `https://vettan-ai-*-<scope>.vercel.app/**` and
-     `http://localhost:3000/**`.
+   - Add these **Redirect URLs**: `https://vettan-*-<scope>.vercel.app/**` and
+     `http://localhost:3000/**`. Vercel's per-deployment URLs start with `vettan-`, not `vettan-ai-`.
 4. Under Authentication → Users → Add user, create the smoke test user (for example
    `smoke@<your-domain>`) with a long random password, and tick "Auto confirm". Then create your own
    login too. Leave CAPTCHA off on staging: the smoke test signs in with a password through the API.
@@ -61,7 +71,9 @@ Environment variables:
 | `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | from the staging project |
 | `OPENAI_API_KEY`, `TAVILY_API_KEY` | the staging keys |
 | `CORS_ORIGINS` | `http://localhost:3000` |
-| `CORS_ORIGIN_REGEX` | `https://vettan-ai-[a-z0-9-]+-<scope>\.vercel\.app` |
+| `CORS_ORIGIN_REGEX` | `https://vettan-[a-z0-9-]+-<scope>\.vercel\.app` |
+| `PYTHON_VERSION` | the version in `backend/runtime.txt`. Render's default is newer. |
+| `AUDIT_IP_SALT` | `openssl rand -hex 32` |
 | `GLOBAL_DAILY_BUDGET_USD` | `2` |
 | `SENTRY_DSN` | same as production |
 | `SENTRY_ENVIRONMENT` | `staging` |
