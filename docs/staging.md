@@ -62,7 +62,8 @@ Create it with New → Web Service, using the same repository and settings as pr
 | Name | `vettan-ai-staging` |
 | Branch | `main` |
 | Instance type | Free |
-| Build filters | none, because the smoke test waits for every `main` commit to deploy |
+| Root Directory | `backend/`. Render only redeploys when a commit changes `backend/`, and the smoke test expects the latest such commit. |
+| Build filters | none |
 
 Environment variables:
 

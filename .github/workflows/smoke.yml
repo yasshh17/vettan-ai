@@ -28,6 +28,12 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Render deploys only when backend/ changes, so that is the commit staging reports.
+      - name: Find the commit staging should be running
+        run: echo "EXPECT_COMMIT=$(git log -1 --format=%H -- backend)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v7
         with:
@@ -44,6 +50,4 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
-          # Promote trusts a pass for this commit, so every run waits for it to be the deployed one.
-          EXPECT_COMMIT: ${{ github.sha }}
         run: python scripts/smoke.py
