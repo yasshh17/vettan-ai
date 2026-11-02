@@ -6,7 +6,8 @@ Run by .github/workflows/smoke.yml against staging, or by hand:
         python scripts/smoke.py
 
 EXPECT_COMMIT (optional) makes it wait until /health reports that commit, so it
-tests the new deploy rather than the old one. Exits 1 on the first failure.
+tests the new deploy rather than the old one. smoke.yml passes the latest commit
+that changed backend/, because Render skips the others. Exits 1 on the first failure.
 """
 from __future__ import annotations
 
