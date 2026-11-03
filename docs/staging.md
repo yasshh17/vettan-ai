@@ -130,9 +130,21 @@ stops writing to production.
    - The first time, also check that both Render and Vercel started a production deploy from `release`.
 
 **Rollback:**
-- On Render, go to the production service → Events, pick the previous deploy and click Rollback.
-- On Vercel, go to Deployments, pick the previous production deploy and use Instant Rollback.
-- Then fix forward on `main`.
+- On Render, go to the production service → Deploys, click Rollback on the deploy you want, then
+  "Rollback to this deploy". It's live in about a minute. Render turns Auto-Deploy off.
+- On Vercel, go to Deployments, open the previous production deploy, then ⋯ → Instant Rollback. It
+  switches in seconds and keeps that build's environment variables. The free plan only allows the
+  deploy directly before the current one. New production deploys stop going live until you undo the
+  rollback.
+- Fix forward on `main`. Before you promote the fix, turn Render's Auto-Deploy back on: Settings →
+  Deploy → Auto-Deploy → Edit, choose On Commit, then Save. Choosing it without Edit doesn't save.
+- Promote. Render deploys the fix. Vercel builds it but doesn't make it live, so go to Overview →
+  Manage Rollback, pick the new deploy, then Confirm.
+- To undo a rollback without a fix, turn Auto-Deploy back on the same way, then use Manual Deploy →
+  Deploy latest commit. "Deploy a specific commit" turns Auto-Deploy off again. On Vercel, use Manage
+  Rollback to pick the deploy that was live before.
+- Check production `/health` and the site. Vercel's Overview card can show an old deploy, so trust the
+  site itself.
 
 ## Dependency updates
 - **Grouped minor and patch updates:** merge when CI is green, then release as usual.
