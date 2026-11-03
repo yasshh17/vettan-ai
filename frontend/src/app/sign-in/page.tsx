@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { AuthShell } from "@/components/auth/auth-shell"
 import { SignInForm } from "@/components/auth/sign-in-form"
+import { ACCOUNT_DELETION_NOTE } from "@/lib/analytics-consent"
 
 export const metadata: Metadata = {
   title: "Sign in — Vettan",
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 const ERROR_MESSAGES: Record<string, string> = {
   link_invalid:
     "That link is invalid or has expired. If you just confirmed your email, sign in with your password.",
+  deletion_pending: ACCOUNT_DELETION_NOTE,
 }
 
 export default async function SignInPage({

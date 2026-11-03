@@ -12,6 +12,9 @@ export const LEGAL_VALUES = {
   ERROR_REPORT_RETENTION_DAYS: "30",
 } as const
 
+// Bump when the analytics consent wording changes, so each decision records what was shown.
+export const CONSENT_WORDING_VERSION = "v1"
+
 export type LegalSlug = "terms" | "privacy" | "usage-policy"
 
 export const LEGAL_ORDER: LegalSlug[] = ["terms", "privacy", "usage-policy"]

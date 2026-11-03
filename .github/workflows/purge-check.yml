@@ -1,0 +1,55 @@
+name: Analytics health
+
+# Proof that the purge ran, keys match, and no erasure is stuck. A failed run
+# emails the owner. Each run also wakes a sleeping free Render instance, which
+# runs a maintenance pass at startup, so this is what keeps retries going when
+# nothing else reaches the backend. See docs/analytics-operations.md.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "40 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: staging
+            url_var: STAGING_API_URL
+            token_secret: STAGING_PURGE_HEALTH_TOKEN
+          - target: production
+            url_var: PRODUCTION_API_URL
+            token_secret: PRODUCTION_PURGE_HEALTH_TOKEN
+    steps:
+      - name: Query the health endpoint
+        env:
+          API_URL: ${{ vars[matrix.url_var] }}
+          TOKEN: ${{ secrets[matrix.token_secret] }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
+            # A production check that can't run must not look like a pass.
+            if [ "${{ matrix.target }}" = "production" ]; then
+              echo "::error::production isn't configured for analytics health checks"
+              exit 1
+            fi
+            echo "::warning::${{ matrix.target }} isn't configured for analytics health checks"
+            exit 0
+          fi
+          # Through stdin, so the token isn't in the process list. A long timeout
+          # because free Render instances take about a minute to wake.
+          body=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl --config - \
+            --fail --silent --show-error --max-time 120 \
+            --retry 3 --retry-all-errors --retry-delay 30 \
+            "$API_URL/api/internal/analytics/purge-health")
+          echo "$body" | jq '{ok, urgent, problems, pending_erasures, last_purge_at}'
+          if [ "$(echo "$body" | jq -r .urgent)" = "true" ]; then
+            echo "::error::URGENT: an analytics erasure has been pending for over 7 days"
+          fi
+          [ "$(echo "$body" | jq -r .ok)" = "true" ]

@@ -154,11 +154,28 @@ def request_ip(request: Request) -> Optional[str]:
     return client_ip(headers, peer, rate_limit.TRUSTED_HOPS)
 
 
+class InternalRouteGuard:
+    """Internal routes are server to server: anything browser-shaped gets a bare 404."""
+
+    def __init__(self, app: ASGIApp, prefix: str) -> None:
+        self.app = app
+        self.prefix = prefix
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope.get("path", "").startswith(self.prefix):
+            names = {k.decode("latin-1").lower() for k, _ in scope.get("headers", [])}
+            if scope.get("method") != "GET" or names & {"origin", "sec-fetch-site"}:
+                await JSONResponse({"detail": "Not Found"}, status_code=404)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 def rate_limited(
     bucket: str,
     auth_dependency: Callable[..., Any],
     store: RateLimitStore,
     cost: float = 1.0,
+    on_reject: Optional[Callable[[], None]] = None,
 ) -> Callable[..., Any]:
     """
     Wrap an auth dependency so it also charges `bucket`, keyed by the verified user id.
@@ -177,6 +194,8 @@ def rate_limited(
 
         if not decision.allowed:
             audit.record("rate_limited", user_id=user.id, ip=request_ip(request), bucket=bucket)
+            if on_reject:
+                on_reject()
             raise HTTPException(
                 status_code=429,
                 detail=_detail(decision),

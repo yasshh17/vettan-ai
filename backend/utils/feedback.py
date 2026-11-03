@@ -35,6 +35,10 @@ def set_rating(
     ).execute()
 
 
+def delete_for_session(client: Any, user_id: str, session_id: str) -> None:
+    client.table(TABLE).delete().eq("user_id", user_id).eq("session_id", session_id).execute()
+
+
 def ratings_for_session(client: Any, user_id: str, session_id: str) -> Dict[str, str]:
     response = (
         client.table(TABLE)

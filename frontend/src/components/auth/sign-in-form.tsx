@@ -63,6 +63,12 @@ export function SignInForm({ initialError = "" }: { initialError?: string }) {
         return
       }
 
+      if (error?.code === "user_banned") {
+        setFormError("This account is being deleted.")
+        setLoading(false)
+        return
+      }
+
       if (error) {
         setFormError("Invalid email or password.")
         setLoading(false)

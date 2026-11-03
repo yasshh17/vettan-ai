@@ -1,6 +1,8 @@
 """
-Records one analytics_events row per research or follow-up request.
-Numbers only. Keep query text, answers and URLs out of these.
+Records one analytics_events row per research or follow-up request, and one per
+request a guard turned away. Numbers only. Keep query text, answers and URLs out
+of these. Rows hold no account or session id: the database links a row to a coded
+ID only if consent is granted when it's written.
 """
 from __future__ import annotations
 
@@ -8,10 +10,10 @@ import logging
 import math
 import threading
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Mapping, Optional, Protocol
 
+from utils import analytics_keys
 from utils.rate_limit import _env_bool
 
 logger = logging.getLogger(__name__)
@@ -29,9 +31,12 @@ EVENT_TYPES = frozenset({
     "cache_hit",
     "followup_completed",
     "followup_failed",
+    "request_blocked",
 })
 REQUEST_TYPES = frozenset({"research", "followup"})
-FAILURE_STAGES = frozenset({
+# The reason only. A moderation category can itself be sensitive.
+BLOCK_REASONS = frozenset({"rate_limit", "spend_limit", "moderation"})
+FAILURE_STAGES = BLOCK_REASONS | frozenset({
     "decomposition",
     "search",
     "search_no_results",
@@ -84,15 +89,6 @@ def _cost(value: Any) -> Optional[float]:
     return round(float(value), 6)
 
 
-def _uuid_or_none(value: Any) -> Optional[str]:
-    if not isinstance(value, str):
-        return None
-    try:
-        return str(uuid.UUID(value))
-    except ValueError:
-        return None
-
-
 def _clean_metadata(metadata: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     clean: Dict[str, Any] = {}
     for key, value in (metadata or {}).items():
@@ -113,9 +109,8 @@ def _clean_metadata(metadata: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
 def build_event(
     event_type: str,
     *,
-    user_id: Optional[str],
-    session_id: Optional[str] = None,
     failure_stage: Optional[str] = None,
+    request_type: Optional[str] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     **metrics: Any,
 ) -> Dict[str, Any]:
@@ -129,11 +124,12 @@ def build_event(
     elif failure_stage not in FAILURE_STAGES:
         failure_stage = "internal"
 
+    if request_type not in REQUEST_TYPES:
+        request_type = "followup" if event_type.startswith("followup_") else "research"
+
     row: Dict[str, Any] = {
-        "user_id": _uuid_or_none(user_id),
-        "session_id": _uuid_or_none(session_id),
         "event_type": event_type,
-        "request_type": "followup" if event_type.startswith("followup_") else "research",
+        "request_type": request_type,
         "success": success,
         "failure_stage": failure_stage,
         "cache_hit": event_type == "cache_hit",
@@ -146,7 +142,7 @@ def build_event(
 
 
 class AnalyticsStore(Protocol):
-    def insert(self, row: Dict[str, Any]) -> None:
+    def insert(self, row: Dict[str, Any], user_id: Optional[str] = None) -> None:
         ...
 
 
@@ -160,11 +156,16 @@ class SupabaseAnalyticsStore:
     def __init__(self, client_factory: Callable[[], Any]) -> None:
         self._client_factory = client_factory
 
-    def insert(self, row: Dict[str, Any]) -> None:
+    def insert(self, row: Dict[str, Any], user_id: Optional[str] = None) -> None:
         client = self._client_factory()
         if client is None:
             raise AnalyticsUnavailable("service-role Supabase client is not configured")
-        client.table(TABLE).insert(row).execute()
+        client.rpc("record_analytics_event", {
+            "p_user": user_id,
+            "p_actor": analytics_keys.actor_id(user_id),
+            "p_fingerprint": analytics_keys.fingerprint("id"),
+            "p_row": row,
+        }).execute()
 
 
 def _admin_client() -> Any:
@@ -182,10 +183,10 @@ _idle = threading.Condition()
 _warned_unavailable = False
 
 
-def _write(row: Dict[str, Any]) -> None:
+def _write(row: Dict[str, Any], user_id: Optional[str]) -> None:
     global _pending, _warned_unavailable
     try:
-        store.insert(row)
+        store.insert(row, user_id)
     except AnalyticsUnavailable as e:
         if not _warned_unavailable:
             _warned_unavailable = True
@@ -204,7 +205,7 @@ def _write(row: Dict[str, Any]) -> None:
             _idle.notify_all()
 
 
-def record(event_type: str, **fields: Any) -> None:
+def record(event_type: str, *, user_id: Optional[str] = None, **fields: Any) -> None:
     """Queue an event. Never raises or waits on the database."""
     global _pending
     try:
@@ -217,7 +218,7 @@ def record(event_type: str, **fields: Any) -> None:
                 return
             _pending += 1
         try:
-            _executor.submit(_write, row)
+            _executor.submit(_write, row, user_id)
         except Exception:
             with _idle:
                 _pending -= 1
@@ -225,6 +226,14 @@ def record(event_type: str, **fields: Any) -> None:
             raise
     except Exception as e:
         logger.warning("Analytics event %s not recorded: %s", event_type, type(e).__name__)
+
+
+def record_blocked(reason: str, request_type: str = "research") -> None:
+    """A guard turned a request away. Never linked to a person."""
+    if reason not in BLOCK_REASONS:
+        logger.warning("Unknown block reason dropped")
+        return
+    record("request_blocked", failure_stage=reason, request_type=request_type)
 
 
 def flush(timeout: float = 5.0) -> bool:
@@ -284,7 +293,6 @@ class RequestTracker:
         self,
         event_type: str,
         *,
-        session_id: Optional[str] = None,
         failure_stage: Optional[str] = None,
         analytics: Optional[Mapping[str, Any]] = None,
         **metrics: Any,
@@ -301,7 +309,6 @@ class RequestTracker:
             record(
                 event_type,
                 user_id=self.user_id,
-                session_id=session_id,
                 failure_stage=failure_stage,
                 metadata=metadata,
                 total_latency_ms=self._elapsed_ms(),
@@ -311,33 +318,31 @@ class RequestTracker:
         except Exception as e:
             logger.warning("Analytics event %s not recorded: %s", event_type, type(e).__name__)
 
-    def completed(self, *, session_id: Optional[str] = None, analytics: Optional[Mapping[str, Any]] = None) -> None:
-        self._record(f"{self.request_type}_completed", session_id=session_id, analytics=analytics)
+    def completed(self, *, analytics: Optional[Mapping[str, Any]] = None) -> None:
+        self._record(f"{self.request_type}_completed", analytics=analytics)
 
     def failed(
         self,
         stage: Optional[str],
         *,
-        session_id: Optional[str] = None,
         analytics: Optional[Mapping[str, Any]] = None,
     ) -> None:
         self._record(
             f"{self.request_type}_failed",
-            session_id=session_id,
             failure_stage=stage or "internal",
             analytics=analytics or self.progress,
         )
 
-    def outcome(self, analytics: Optional[Mapping[str, Any]], *, session_id: Optional[str] = None) -> None:
+    def outcome(self, analytics: Optional[Mapping[str, Any]]) -> None:
         """Completed, unless the pipeline reported a failure_stage."""
         stage = (analytics or {}).get("failure_stage")
         if stage:
-            self.failed(stage, session_id=session_id, analytics=analytics)
+            self.failed(stage, analytics=analytics)
         else:
-            self.completed(session_id=session_id, analytics=analytics)
+            self.completed(analytics=analytics)
 
-    def cache_hit(self, *, session_id: Optional[str] = None, selected_source_count: Optional[int] = None) -> None:
-        self._record("cache_hit", session_id=session_id, selected_source_count=selected_source_count)
+    def cache_hit(self, *, selected_source_count: Optional[int] = None) -> None:
+        self._record("cache_hit", selected_source_count=selected_source_count)
 
     def finish(self, stage: Optional[str] = None) -> None:
         """For `finally`: records a failure if work started and nothing was recorded."""

@@ -31,6 +31,8 @@ from utils.rate_limit_http import RateLimitMiddleware, rate_limited  # noqa: E40
 from utils.spend_guard import InMemorySpendStore  # noqa: E402
 
 import main  # noqa: E402
+from tests.analytics_fakes import FakePrivacyStore  # noqa: E402
+from utils import analytics_privacy  # noqa: E402
 
 failures = []
 
@@ -242,6 +244,7 @@ class FakeAdmin:
 
 
 main.get_admin_client = lambda: FakeAdmin()
+analytics_privacy.store = FakePrivacyStore()
 # Deletion needs the current password; see test_account_delete.py.
 main._password_matches = lambda uid, pw: pw == "right-password"
 reset()

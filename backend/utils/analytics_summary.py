@@ -1,5 +1,5 @@
 """
-Aggregates for GET /api/admin/analytics/summary. Never return rows or user ids.
+Aggregates for GET /api/admin/analytics/summary. Never return rows or coded ids.
 Metric definitions are in docs/analytics.md.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ from utils.analytics import TABLE
 logger = logging.getLogger(__name__)
 
 COLUMNS = (
-    "id,created_at,user_id,event_type,request_type,failure_stage,"
+    "id,created_at,actor_id,event_type,request_type,failure_stage,"
     "total_latency_ms,ttft_ms,search_latency_ms,subquery_count,"
     "successful_search_count,total_search_count,selected_source_count,estimated_cost_usd"
 )
@@ -127,12 +127,12 @@ def summarize_feedback(rows: Sequence[Dict[str, Any]], completed_answers: int) -
 
 
 def summarize_retention(rows: Sequence[Dict[str, Any]], days: int, now: datetime) -> Dict[str, Any]:
-    """Day N: of users first seen at least N days ago, how many came back within N days."""
+    """Day N: of consenting users first seen at least N days ago, how many came back within N days."""
     active: Dict[str, set] = defaultdict(set)
     for row in rows:
         day = _day(row.get("created_at"))
-        if row.get("user_id") and day:
-            active[row["user_id"]].add(day)
+        if row.get("actor_id") and day:
+            active[row["actor_id"]].add(day)
     first_seen = {user: min(seen) for user, seen in active.items()}
 
     today = now.astimezone(timezone.utc).date()
@@ -194,8 +194,8 @@ def summarize(
         if day is None:
             continue
         requests_per_day[day] += 1
-        if row.get("user_id"):
-            users_per_day[day].add(row["user_id"])
+        if row.get("actor_id"):
+            users_per_day[day].add(row["actor_id"])
     first_day = since.date()
 
     return {
@@ -252,7 +252,7 @@ def build_summary(client: Any, days: int, now: Optional[datetime] = None) -> Dic
     since = window_start(days, now)
     rows, truncated = fetch_rows(client, since)
     activity, activity_truncated = fetch_rows(
-        client, window_start(RETENTION_LOOKBACK_DAYS, now), columns="id,user_id,created_at"
+        client, window_start(RETENTION_LOOKBACK_DAYS, now), columns="id,actor_id,created_at"
     )
     try:
         feedback_rows, feedback_truncated = fetch_rows(

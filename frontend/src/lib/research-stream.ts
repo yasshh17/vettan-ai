@@ -49,7 +49,7 @@ function parseFrame(frame: string): StreamEvent | null {
   try {
     return { type: event, ...JSON.parse(data) } as StreamEvent
   } catch {
-    console.error("Could not parse stream frame:", frame.slice(0, 120))
+    console.error("Could not parse stream frame:", frame.length, "chars")
     return null
   }
 }

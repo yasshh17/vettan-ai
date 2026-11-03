@@ -1,5 +1,6 @@
 """
-Post-deploy smoke test: sign in, ask one real question, ask a follow-up, check history.
+Post-deploy smoke test: sign in, read the analytics consent, ask one real question, ask a
+follow-up, check history.
 
 Run by .github/workflows/smoke.yml against staging, or by hand:
     API_URL=... SUPABASE_URL=... SUPABASE_ANON_KEY=... SMOKE_EMAIL=... SMOKE_PASSWORD=... \
@@ -127,6 +128,12 @@ def run(
     token = sign_in(client, supabase_url, anon_key, email, password)
     report.append("sign-in: ok")
     auth = {"Authorization": f"Bearer {token}"}
+
+    # Read only. Fails when the analytics privacy migration is missing.
+    consent = client.get(f"{api}/api/analytics/consent", headers=auth)
+    check(consent.status_code == 200, f"consent returned {consent.status_code}")
+    check(isinstance(consent.json().get("granted"), bool), "consent answer has no granted flag")
+    report.append("consent: ok")
 
     # use_cache off so the whole pipeline runs, not a stored answer.
     events, ttft = ask(client, api, token, {"query": QUESTION, "use_cache": False})

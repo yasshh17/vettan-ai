@@ -29,6 +29,8 @@ from types import SimpleNamespace as NS  # noqa: E402
 import httpx  # noqa: E402
 
 import main  # noqa: E402
+from tests.analytics_fakes import FakePrivacyStore  # noqa: E402
+from utils import analytics_privacy  # noqa: E402
 
 failures = []
 
@@ -103,6 +105,7 @@ db = FakeDB()
 main._db_for = lambda user: db
 main.get_tts = lambda: SlowTTS()
 main.get_admin_client = lambda: FakeAdminClient()
+analytics_privacy.store = FakePrivacyStore()
 main._password_matches = lambda user_id, password: True
 main.app.dependency_overrides[main.get_current_user] = lambda: main.AuthedUser(id=USER, token="stub")
 

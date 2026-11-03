@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
 import { LegalLinkRow } from "@/components/legal/legal-links"
+import { AnalyticsSetting } from "@/components/settings/analytics-setting"
+import { ACCOUNT_DELETION_NOTE } from "@/lib/analytics-consent"
 import {
   Dialog,
   DialogContent,
@@ -151,15 +153,25 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
         return
       }
 
-      await api.deleteAccount(deletePassword, session.access_token)
+      const result = await api.deleteAccount(deletePassword, session.access_token)
+      const pending = result.status === "pending"
 
-      toast({
-        title: "Account deleted",
-        description: "You've been signed out. We're sorry to see you go.",
-      })
+      toast(
+        pending
+          ? { title: "Your account is being deleted", description: ACCOUNT_DELETION_NOTE }
+          : {
+              title: "Account deleted",
+              description: "You've been signed out. We're sorry to see you go.",
+            }
+      )
       handleOpenChange(false)
-      // The auth user is gone, so the server sign-out may fail.
-      await signOutAndReset({ ignoreErrors: true })
+      // The auth user is gone, so the server sign-out may fail. The redirect clears
+      // the toast, so the sign-in page repeats the pending message.
+      await signOutAndReset(
+        pending
+          ? { ignoreErrors: true, redirectTo: "/sign-in?error=deletion_pending" }
+          : { ignoreErrors: true }
+      )
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
       let description = "Something went wrong. Try again, or contact support if this keeps happening."
@@ -290,6 +302,10 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
 
         <Separator className="my-8 bg-neutral-800" />
 
+        <AnalyticsSetting open={open} />
+
+        <Separator className="my-8 bg-neutral-800" />
+
         <div className="space-y-3">
           <Alert variant="destructive" className="border-red-900/50 bg-red-950/20">
             <AlertTriangle className="h-4 w-4 text-red-400" />
@@ -298,7 +314,7 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
               This permanently deletes your Vettan account and signs you out everywhere.
               This can&apos;t be undone.
               <span className="mt-2 block text-red-200/80">
-                Your conversations and usage records are erased immediately.{" "}
+                {ACCOUNT_DELETION_NOTE}{" "}
                 <Link
                   href="/privacy#7-how-long-we-keep-information"
                   target="_blank"

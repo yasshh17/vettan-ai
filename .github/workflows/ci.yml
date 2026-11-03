@@ -54,6 +54,19 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      # Consent races need real row locks.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
 
@@ -95,6 +108,17 @@ jobs:
 
       - name: Product analytics tests
         run: python tests/test_analytics.py
+
+      - name: Analytics privacy tests
+        run: python tests/test_analytics_privacy.py
+
+      - name: Analytics runbook tests
+        run: python tests/test_analytics_runbooks.py
+
+      - name: Analytics SQL tests
+        env:
+          ANALYTICS_TEST_DATABASE_URL: postgresql://postgres@localhost:5432/postgres
+        run: python tests/test_analytics_sql.py
 
       - name: Research failure tests
         run: python tests/test_research_failures.py

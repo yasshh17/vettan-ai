@@ -9,6 +9,7 @@ import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
 import { PendingQuestionNote } from "@/components/auth/pending-question-note"
 import { SignUpConsent } from "@/components/legal/legal-links"
+import { CONSENT_LABEL } from "@/lib/analytics-consent"
 import {
   validateDateOfBirth,
   validateEmail,
@@ -22,6 +23,7 @@ export function SignUpForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [dateOfBirth, setDateOfBirth] = useState("")
+  const [analyticsConsent, setAnalyticsConsent] = useState(false)
   const [errors, setErrors] = useState<{
     fullName?: string | null
     email?: string | null
@@ -57,7 +59,11 @@ export function SignUpForm() {
         email: email.trim(),
         password,
         options: {
-          data: { full_name: fullName.trim(), date_of_birth: dateOfBirth },
+          data: {
+            full_name: fullName.trim(),
+            date_of_birth: dateOfBirth,
+            analytics_consent: analyticsConsent,
+          },
           emailRedirectTo: `${window.location.origin}/auth/callback?next=/app`,
         },
       })
@@ -167,6 +173,16 @@ export function SignUpForm() {
             onChange={(e) => setPassword(e.target.value)}
             error={errors.password}
           />
+
+          <label className="flex items-start gap-3 text-[13px] leading-[1.6] text-[#9B9BA8]">
+            <input
+              type="checkbox"
+              checked={analyticsConsent}
+              onChange={(e) => setAnalyticsConsent(e.target.checked)}
+              className="mt-1 h-4 w-4 shrink-0 accent-[#9C90FF]"
+            />
+            <span>{CONSENT_LABEL}</span>
+          </label>
 
           <button
             type="submit"

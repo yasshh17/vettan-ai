@@ -2,3 +2,6 @@
 
 # Lets the rate limiter tests run without a Redis server.
 fakeredis[lua]==2.40.0
+
+# Lets test_analytics_sql.py run consent races on a real Postgres.
+psycopg[binary]==3.3.6
