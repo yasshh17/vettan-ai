@@ -117,8 +117,28 @@ Then go to Actions → Staging smoke test → Run workflow. It must pass before 
    pushes to it directly.
 
 ### 7. Local development
-Point `backend/.env` and `frontend/.env.local` at the staging project and keys. Local testing then
-stops writing to production.
+Use the local Supabase below, not staging or production. Keep production keys out of `backend/.env` and
+`frontend/.env.local`.
+
+## Local development
+You need Docker running. From the repo root:
+
+```bash
+npx supabase@2.121.0 start
+docker compose up --build -d
+cd frontend && npm run dev
+```
+
+- `npx supabase@2.121.0 status -o env` prints the local URL and keys for `backend/.env` and
+  `frontend/.env.local`. Use `http://127.0.0.1:54321` as the Supabase URL in both.
+- `docker-compose.yml` overrides `SUPABASE_URL` and turns Sentry off, so the Docker backend stays local
+  whatever `backend/.env` says. `npm run dev` and a backend run outside Docker still use the env files.
+- Confirmation emails land in Mailpit at `http://127.0.0.1:54324`.
+- Studio is at `http://127.0.0.1:54323`.
+- To rebuild the database from the migrations, run `npx supabase@2.121.0 db reset`. This wipes local
+  data.
+- The local stack still grants table access the old way, so it can't catch a missing grant. A new
+  table's migration must grant access itself, like `0010`.
 
 ## Releasing a change
 1. Merge the PR into `main`. Staging deploys, and **Staging smoke test** runs.

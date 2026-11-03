@@ -1,5 +1,7 @@
 # Local backend + Redis, the same shape as production.
+#   npx supabase@2.121.0 start
 #   docker compose up --build
+# The values under environment beat backend/.env, so this never reaches production.
 services:
   redis:
     image: redis:7-alpine
@@ -12,5 +14,12 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      SUPABASE_URL: http://host.docker.internal:54321
+      SENTRY_DSN: ""
+      SENTRY_ENVIRONMENT: local
+      ANALYTICS_ADMIN_USER_IDS: ""
+      GLOBAL_DAILY_BUDGET_USD: "2"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
