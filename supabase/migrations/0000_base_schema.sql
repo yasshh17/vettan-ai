@@ -8,8 +8,7 @@
 -- time zone. Leaves out the unused, empty legacy tables conversations and
 -- audio_cache, and messages.conversation_id.
 --
--- Fresh project: run 0000, 0001, then 0003 onwards. Skip 0002 (it claims
--- pre-auth rows for one production account and raises if that account is missing).
+-- Fresh project: run every migration in order. 0002 does nothing there.
 
 begin;
 

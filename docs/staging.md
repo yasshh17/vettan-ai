@@ -26,19 +26,10 @@ example `yasshh17s-projects`).
 
 ### 1. Supabase staging project
 1. Create a new project named `vettan-staging` on the free plan, in the same region as production.
-2. In the SQL editor, run these migrations in order: `0000`, `0001`, `0003`, `0004`, `0005`, `0006`,
-   `0007`, `0008`, `0009`. **Skip `0002`.** It claims old rows for one production account and stops
-   with an error when that account doesn't exist.
-   New Supabase projects don't give the API roles access to new tables, and these migrations don't grant
-   it. After the last migration, run:
-
-   ```sql
-   grant select, insert, update, delete on public.research_sessions, public.messages, public.profiles
-     to anon, authenticated, service_role;
-   grant select, insert, update, delete on public.usage_daily, public.spend_daily,
-     public.analytics_events, public.answer_feedback to service_role;
-   grant usage, select on all sequences in schema public to service_role;
-   ```
+2. In the SQL editor, run the migrations in order, from `0000` onwards. Stop at the last one on `main`,
+   because staging runs `main`'s code. A migration that's still on a branch goes on when that branch is
+   ready to test. `0002` does nothing on a new project, and `0010` gives the API roles the table access
+   that new projects no longer grant by default.
 3. Under Authentication → URL Configuration:
    - Set **Site URL** to `https://vettan-ai-git-main-<scope>.vercel.app`.
    - Add these **Redirect URLs**: `https://vettan-*-<scope>.vercel.app/**` and
@@ -117,8 +108,28 @@ Then go to Actions → Staging smoke test → Run workflow. It must pass before 
    pushes to it directly.
 
 ### 7. Local development
-Point `backend/.env` and `frontend/.env.local` at the staging project and keys. Local testing then
-stops writing to production.
+Use the local Supabase below, not staging or production. Keep production keys out of `backend/.env` and
+`frontend/.env.local`.
+
+## Local development
+You need Docker running. From the repo root:
+
+```bash
+npx supabase@2.121.0 start
+docker compose up --build -d
+cd frontend && npm run dev
+```
+
+- `npx supabase@2.121.0 status -o env` prints the local URL and keys for `backend/.env` and
+  `frontend/.env.local`. Use `http://127.0.0.1:54321` as the Supabase URL in both.
+- `docker-compose.yml` overrides `SUPABASE_URL` and turns Sentry off, so the Docker backend stays local
+  whatever `backend/.env` says. `npm run dev` and a backend run outside Docker still use the env files.
+- Confirmation emails land in Mailpit at `http://127.0.0.1:54324`.
+- Studio is at `http://127.0.0.1:54323`.
+- To rebuild the database from the migrations, run `npx supabase@2.121.0 db reset`. This wipes local
+  data.
+- The local stack still grants table access the old way, so it can't catch a missing grant. A new
+  table's migration must grant access itself, like `0010`.
 
 ## Releasing a change
 1. Merge the PR into `main`. Staging deploys, and **Staging smoke test** runs.

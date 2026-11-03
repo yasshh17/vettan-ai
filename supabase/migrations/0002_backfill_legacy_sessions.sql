@@ -22,6 +22,12 @@ declare
   legacy_owner constant uuid := '8dde29a5-1350-45d5-9039-5830f81065f6';  -- yasshh17@gmail.com
   claimed int;
 begin
+  -- A fresh database has nothing to claim, and no legacy owner either.
+  if not exists (select 1 from public.research_sessions where user_id is null) then
+    raise notice 'No pre-auth sessions to assign';
+    return;
+  end if;
+
   if not exists (select 1 from auth.users where id = legacy_owner) then
     raise exception
       'Legacy owner % does not exist in auth.users - update this migration before running it',
