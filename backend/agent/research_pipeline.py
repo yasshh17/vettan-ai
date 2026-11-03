@@ -162,12 +162,12 @@ async def decompose_query(query: str, stats: Optional[_RunStats] = None) -> List
                 if isinstance(parsed[key], list):
                     return parsed[key][:4]
 
-        logger.warning(f"Unexpected decomposition format: {content}")
+        logger.warning(f"Unexpected decomposition format: {type(parsed).__name__}")
         stats.decomposition_fallback = True
         return [query]
 
     except Exception as e:
-        logger.warning(f"Query decomposition failed ({e}), using original query")
+        logger.warning(f"Query decomposition failed ({type(e).__name__}), using original query")
         stats.decomposition_fallback = True
         return [query]
 
@@ -199,7 +199,7 @@ async def _single_search(query: str, max_results: int = 5) -> Dict[str, Any]:
             "success": True
         }
     except Exception as e:
-        logger.error(f"Search failed for '{query}': {e}")
+        logger.error(f"Search failed: {type(e).__name__}")
         observability.capture(e)
         return {"query": query, "answer": "", "results": [], "success": False}
 
@@ -469,7 +469,7 @@ async def research_complete(query: str) -> Dict[str, Any]:
     warm_task = asyncio.create_task(warm_tavily_connections(n=4))
     sub_queries = await decompose_query(query, stats)
     decomp_time = time.time() - start_time
-    logger.info(f"[Pipeline] Decomposed in {decomp_time:.1f}s: {sub_queries}")
+    logger.info(f"[Pipeline] Decomposed in {decomp_time:.1f}s: {len(sub_queries)} sub-queries")
     if not warm_task.done():
         warm_task.cancel()  # warming is best-effort; never let it delay the search
 
@@ -542,7 +542,7 @@ async def research_stream(query: str) -> AsyncIterator[Dict[str, Any]]:
     warm_task = asyncio.create_task(warm_tavily_connections(n=4))
     sub_queries = await decompose_query(query, stats)
     decomp_time = time.time() - start_time
-    logger.info(f"[Stream] Decomposed in {decomp_time:.1f}s: {sub_queries}")
+    logger.info(f"[Stream] Decomposed in {decomp_time:.1f}s: {len(sub_queries)} sub-queries")
     if not warm_task.done():
         warm_task.cancel()
 

@@ -572,6 +572,11 @@ metric definitions are in [docs/analytics.md](docs/analytics.md).
 `0009_answer_feedback.sql` adds `answer_feedback` for the thumbs up/down on
 answers: ids and the rating only, service-role only, non-breaking.
 
+`0011_analytics_privacy.sql` adds consent, erasure requests, key checks and the
+nightly purge. Consent is checked in the database when each row is written. It's
+service-role only and non-breaking, but it must be applied before the backend
+deploys. See [docs/analytics-operations.md](docs/analytics-operations.md).
+
 ---
 
 ## 📖 Usage Examples
@@ -796,6 +801,12 @@ Delete conversation and all associated messages.
 Aggregate product metrics for the last `days` UTC days (1–90). Only user ids
 listed in `ANALYTICS_ADMIN_USER_IDS` can call it; anyone else gets `403`. It
 returns counts, rates and percentiles only. See [docs/analytics.md](docs/analytics.md).
+
+#### **GET** and **PUT `/api/analytics/consent`**
+
+Reads or changes the caller's own product analytics choice. Turning it off stops new
+links at once, then deletes linked rows. Granting returns `409` while an erase is
+pending. `POST /api/analytics/consent/notice` clears the one-time completion notice.
 
 #### **PUT `/api/feedback`** and **GET `/api/feedback?session_id=`**
 
@@ -1058,6 +1069,9 @@ AUDIT_IP_SALT=change-me         # any random string; used to hash IPs in [Securi
 # ── Product analytics (docs/analytics.md) ────────────────────────────────
 ANALYTICS_ENABLED=true
 ANALYTICS_ADMIN_USER_IDS=       # comma-separated auth user ids; empty = nobody can read the summary
+ANALYTICS_ID_SECRET=            # makes coded IDs; see docs/analytics-operations.md
+ANALYTICS_AUDIT_LOG_SECRET=     # makes admin references; never the same as the id secret
+PURGE_HEALTH_TOKEN=             # lets the health workflow read the health endpoint
 OPENAI_INPUT_USD_PER_1M=0.15    # prices behind the per-request cost estimate
 OPENAI_OUTPUT_USD_PER_1M=0.60
 TAVILY_USD_PER_SEARCH=0.008     # set to your plan's per-credit price

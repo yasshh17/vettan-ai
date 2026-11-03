@@ -241,7 +241,7 @@ class VettanDatabaseV2:
                 except json.JSONDecodeError:
                     pass
                 
-                print(f"✅ Cache HIT: {query[:50]}")
+                print("✅ Cache HIT")
                 return cached
             
             return None
@@ -591,7 +591,7 @@ class VettanDatabaseV2:
             
             if parsed_sessions:
                 first = parsed_sessions[0]
-                print(f"📝 First session: {first.get('query', 'N/A')[:50]}")
+                print(f"📝 First session: {first.get('id', 'N/A')[:8]}")
             
             return parsed_sessions
             

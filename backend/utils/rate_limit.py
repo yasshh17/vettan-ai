@@ -319,6 +319,8 @@ POLICIES: Dict[str, BucketPolicy] = {
     "read": _policy("read", 60, 60),
     "write": _policy("write", 30, 30),
     "account": _policy("account", 3, 1),
+    # Keyed by IP. Only the daily monitoring check should ever hit it.
+    "internal": _policy("internal", 5, 1),
 }
 
 

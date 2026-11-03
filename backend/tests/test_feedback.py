@@ -17,6 +17,7 @@ os.environ["MODERATION_ENABLED"] = "false"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import re  # noqa: E402
+import uuid  # noqa: E402
 from types import SimpleNamespace as NS  # noqa: E402
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -50,6 +51,9 @@ class FakeDB:
         return True
 
     def owns_session(self, session_id, user_id):
+        return (session_id, user_id) in OWNED
+
+    def delete_session(self, session_id, user_id):
         return (session_id, user_id) in OWNED
 
 
@@ -198,7 +202,27 @@ check("GET database error -> 500", r.status_code == 500, str(r.status_code))
 admin.broken = False
 
 
-print("\n[5] Migration")
+print("\n[5] Deleting a chat takes its ratings")
+
+main._db_for = lambda user: FakeDB()
+as_user(ALICE)
+vote("up")
+other_chat = str(uuid.uuid4())
+admin.rows.append({"user_id": ALICE, "session_id": other_chat, "message_id": "other", "rating": "up",
+                   "is_followup": False})
+r = client.delete(f"/api/history/{ALICE_SESSION}")
+check("the chat deletes", r.status_code == 200, r.text)
+check("its ratings go", not any(x["session_id"] == ALICE_SESSION for x in admin.rows), str(admin.rows))
+check("other ratings stay", any(x["session_id"] == other_chat for x in admin.rows), str(admin.rows))
+vote("up")
+admin.broken = True
+r = client.delete(f"/api/history/{ALICE_SESSION}")
+check("a ratings failure doesn't fail the chat delete", r.status_code == 200, r.text)
+admin.broken = False
+main.app.dependency_overrides.clear()
+
+
+print("\n[6] Migration")
 
 path = os.path.join(os.path.dirname(__file__), "..", "..", "supabase", "migrations", "0009_answer_feedback.sql")
 with open(path) as f:

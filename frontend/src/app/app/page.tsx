@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, memo } from "react"
 import { Card, CardContent } from "@/components/ui/card"
+import { ConsentPrompt } from "@/components/analytics/consent-prompt"
 import Sidebar from "@/components/layout/sidebar"
 import { VoiceMode } from "@/components/research/voice-mode"
 import { AudioPlayer } from "@/components/research/audio-player"
@@ -559,7 +560,7 @@ export default function Home() {
           const buffered = streamBufferRef.current
           if (!buffered) {
             // Unreachable; logged because silently dropped tokens once hid a regression.
-            console.warn("Dropped a streamed token: no target message", event)
+            console.warn("Dropped a streamed token: no target message")
             break
           }
           buffered.text += event.text
@@ -702,6 +703,7 @@ export default function Home() {
   return (
     <div className="flex h-screen bg-neutral-950 overflow-hidden">
       <VoiceMode isOpen={isVoiceModeOpen} onClose={() => setIsVoiceModeOpen(false)} />
+      <ConsentPrompt />
 
       <Sidebar
         onSelectQuery={handleSelectQuery}

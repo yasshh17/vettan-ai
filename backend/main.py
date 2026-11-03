@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Literal, Optional
 from dataclasses import dataclass
@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import asyncio
+import hmac
 import json
 import math
 import os
@@ -53,8 +54,14 @@ from utils.rate_limit import (
     RedisConcurrencySlots,
     RedisTokenBucketStore,
 )
-from utils.rate_limit_http import RateLimitMiddleware, rate_limited, request_ip, warn_if_multiprocess
-from utils import analytics, analytics_summary, audit, feedback, moderation, spend_guard
+from utils.rate_limit_http import (
+    InternalRouteGuard,
+    RateLimitMiddleware,
+    rate_limited,
+    request_ip,
+    warn_if_multiprocess,
+)
+from utils import analytics, analytics_privacy, analytics_summary, audit, feedback, moderation, spend_guard
 
 logging.getLogger("uvicorn.access").addFilter(audit.RedactClientIP())
 
@@ -124,8 +131,10 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(get_database_v2)
     # In the background: a slow or down OpenAI shouldn't hold up boot.
     warm_up = asyncio.create_task(moderation.warm_up())
+    analytics_maintenance = asyncio.create_task(analytics_privacy.run_forever())
     yield
     warm_up.cancel()
+    analytics_maintenance.cancel()
     if _redis is not None:
         await _redis.aclose()
 
@@ -167,6 +176,9 @@ app.add_middleware(
         moderation.MARKER_HEADER,
     ],
 )
+
+# Outermost, so a browser request to an internal route never reaches CORS.
+app.add_middleware(InternalRouteGuard, prefix="/api/internal/")
 
 class ResearchRequest(BaseModel):
     # Bounded because input length drives OpenAI/Tavily cost.
@@ -273,11 +285,30 @@ async def get_current_user(request: Request, authorization: Optional[str] = Head
 # get_current_user plus a per-user bucket. research and research/stream share one
 # because the frontend falls back from the stream to the plain endpoint.
 
-research_user = rate_limited("research", get_current_user, _rate_limit_store)
+research_user = rate_limited(
+    "research", get_current_user, _rate_limit_store,
+    on_reject=lambda: analytics.record_blocked("rate_limit"),
+)
 audio_user = rate_limited("audio", get_current_user, _rate_limit_store)
 read_user = rate_limited("read", get_current_user, _rate_limit_store)
 write_user = rate_limited("write", get_current_user, _rate_limit_store)
 account_user = rate_limited("account", get_current_user, _rate_limit_store)
+
+
+def _moderation_block(verdict: Any, request_type: str) -> HTTPException:
+    # An outage fails closed but isn't a block.
+    if not verdict.unavailable:
+        analytics.record_blocked("moderation", request_type)
+    return moderation.blocked("input", verdict)
+
+
+async def _charge_request(user: AuthedUser, kind: str) -> Optional[spend_guard.Reservation]:
+    try:
+        return await spend_guard.charge(_spend_store, user.id, kind, spend_guard.cost_usd(kind))
+    except HTTPException as e:
+        if (e.headers or {}).get(spend_guard.MARKER_HEADER) != "unavailable":
+            analytics.record_blocked("spend_limit", kind)
+        raise
 
 
 def _db_for(user: AuthedUser):
@@ -481,13 +512,13 @@ async def research(
     re-running the pipeline. Every DB call is scoped to the caller.
     """
     # Same slots as the stream endpoint, since the frontend falls back to this one.
+    request_type = "followup" if request.session_id and request.is_followup else "research"
     if not await _research_slots.try_acquire(user.id):
         audit.record("inflight_rejected", user_id=user.id)
+        analytics.record_blocked("rate_limit", request_type)
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
-    track = analytics.RequestTracker(
-        user.id, "followup" if request.session_id and request.is_followup else "research", "sync"
-    )
+    track = analytics.RequestTracker(user.id, request_type, "sync")
     try:
         db = _db_for(user)
         await _require_schema(db)
@@ -497,10 +528,10 @@ async def research(
         # Before the cache and the charge: nothing paid runs on a flagged query.
         verdict = await moderation.check(request.query, "input", user.id)
         if verdict.flagged:
-            raise moderation.blocked("input", verdict)
+            raise _moderation_block(verdict, request_type)
 
         logger.info("="*60)
-        logger.info(f"REQUEST: {request.query[:80]}")
+        logger.info(f"REQUEST: {len(request.query)} chars")
         logger.info(f"Session: {request.session_id[:8] if request.session_id else 'NEW'}")
         logger.info(f"Follow-up: {request.is_followup}")
         logger.info("="*60)
@@ -529,9 +560,7 @@ async def research(
 
             logger.info(f"Context prepared with {len(conversation_history[-6:])} recent messages")
 
-            await spend_guard.charge(
-                _spend_store, user.id, "followup", spend_guard.cost_usd("followup")
-            )
+            await _charge_request(user, "followup")
 
             track.stage = "synthesis"
             # Earlier messages only: handle_followup appends the question itself.
@@ -575,7 +604,7 @@ async def research(
                 _to_message(msg) for msg in conversation_history + [user_msg, assistant_msg]
             ]
 
-            track.outcome(result.get('analytics'), session_id=request.session_id)
+            track.outcome(result.get('analytics'))
             logger.info(f"[Request] follow-up total {time.perf_counter() - request_started:.2f}s")
             logger.info("="*60)
             logger.info(f"FOLLOW-UP COMPLETE: Returning {len(formatted_messages)} messages")
@@ -593,7 +622,7 @@ async def research(
                 messages=formatted_messages
             )
         
-        logger.info(f"NEW conversation: {request.query[:100]}")
+        logger.info("NEW conversation")
 
         cached_result = await _cached_session(db, request.query, user.id) if request.use_cache else None
         if cached_result:
@@ -610,9 +639,7 @@ async def research(
 
         is_new_session = not cached_result
         if is_new_session:
-            await spend_guard.charge(
-                _spend_store, user.id, "research", spend_guard.cost_usd("research")
-            )
+            await _charge_request(user, "research")
             track.stage = "pipeline"
             result = await research_complete(request.query)
             # The output is an error message here; saving it would also cache it for this query.
@@ -660,9 +687,9 @@ async def research(
             else:
                 logger.warning("Result not saved (database unavailable or output too short)")
             result['metadata']['session_id'] = session_id
-            track.outcome(result.get('analytics'), session_id=session_id)
+            track.outcome(result.get('analytics'))
         else:
-            track.cache_hit(session_id=session_id, selected_source_count=len(result.get('citations', [])))
+            track.cache_hit(selected_source_count=len(result.get('citations', [])))
 
         logger.info(f"Session: {session_id[:8]}")
         logger.info(f"[Request] new query total {time.perf_counter() - request_started:.2f}s")
@@ -712,7 +739,7 @@ async def research_stream_endpoint(
     is_followup = bool(request.session_id and request.is_followup)
 
     logger.info("=" * 60)
-    logger.info(f"STREAM REQUEST: {request.query[:80]}")
+    logger.info(f"STREAM REQUEST: {len(request.query)} chars")
     logger.info(f"Session: {request.session_id[:8] if request.session_id else 'NEW'} | Follow-up: {is_followup}")
     logger.info("=" * 60)
 
@@ -726,11 +753,12 @@ async def research_stream_endpoint(
     else:
         verdict, cached = await moderated, None
     if verdict.flagged:
-        raise moderation.blocked("input", verdict)
+        raise _moderation_block(verdict, "followup" if is_followup else "research")
 
     # Not a yield dependency: its teardown runs before the stream starts.
     if not await _research_slots.try_acquire(user.id):
         audit.record("inflight_rejected", user_id=user.id)
+        analytics.record_blocked("rate_limit", "followup" if is_followup else "research")
         raise HTTPException(status_code=429, detail=_TOO_MANY_IN_FLIGHT)
 
     # Charge before streaming so a rejection is a real 429/503, not an SSE error.
@@ -739,9 +767,7 @@ async def research_stream_endpoint(
     if not cached:
         spend_kind = "followup" if is_followup else "research"
         try:
-            reservation = await spend_guard.charge(
-                _spend_store, user.id, spend_kind, spend_guard.cost_usd(spend_kind)
-            )
+            reservation = await _charge_request(user, spend_kind)
         except BaseException:
             # The generator's finally won't run, so release the slot here.
             _research_slots.release(user.id)
@@ -815,7 +841,7 @@ async def research_stream_endpoint(
                 )
                 saved = True
 
-                track.outcome(final.get("analytics"), session_id=request.session_id)
+                track.outcome(final.get("analytics"))
                 logger.info(f"[Request] streamed follow-up total {time.perf_counter() - request_started:.2f}s")
                 yield _sse("done", {
                     "session_id": request.session_id,
@@ -839,7 +865,7 @@ async def research_stream_endpoint(
                 yield _sse("sources", {"citations": citations, "sources_count": len(citations)})
                 track.mark_first_token()
                 yield _sse("token", {"text": cached['report']})
-                track.cache_hit(session_id=cached.get('id'), selected_source_count=len(citations))
+                track.cache_hit(selected_source_count=len(citations))
                 logger.info(f"[Request] cached stream total {time.perf_counter() - request_started:.2f}s")
                 yield _sse("done", {
                     "session_id": cached.get('id'),
@@ -912,7 +938,7 @@ async def research_stream_endpoint(
             else:
                 logger.warning("Streamed result not saved (database unavailable or output too short)")
 
-            track.outcome(final.get("analytics"), session_id=session_id)
+            track.outcome(final.get("analytics"))
             logger.info(f"[Request] streamed new query total {time.perf_counter() - request_started:.2f}s")
             yield _sse("done", {
                 "session_id": session_id,
@@ -1120,7 +1146,7 @@ async def get_session(
             logger.error(f"Session not found or not owned: {session_id[:8]}")
             raise HTTPException(status_code=404, detail="Session not found")
 
-        logger.info(f"Session found: {session_data.get('query', 'N/A')[:50]}")
+        logger.info("Session found")
 
         messages = await asyncio.to_thread(db.get_conversation_history, session_id, user.id)
         
@@ -1188,7 +1214,7 @@ async def update_session(
         update_data = {}
         if new_title:
             update_data['query'] = new_title
-            logger.info(f"New title: {new_title[:50]}")
+            logger.info(f"New title: {len(new_title)} chars")
         if is_favorite is not None:
             update_data['is_favorite'] = is_favorite
             logger.info(f"Favorite: {is_favorite}")
@@ -1258,16 +1284,15 @@ def _password_matches(user_id: str, password: str) -> bool:
 @app.delete("/api/account")
 async def delete_account(body: DeleteAccountRequest, user: AuthedUser = Depends(account_user)):
     """
-    Delete the authenticated user's Supabase auth account.
+    Delete the authenticated user's account.
 
     Requires the user's current password in the request body: a valid access
     token proves a session exists, not that its owner is the one asking.
 
-    research_sessions.user_id references auth.users(id) ON DELETE CASCADE, and
-    messages.session_id cascades from research_sessions (0001_add_user_id.sql),
-    so removing the auth user now also removes that user's research history.
-    Sessions created before that migration have user_id NULL, belong to nobody,
-    and are unaffected.
+    Chats go at once. If linked analytics can't be erased yet, returns 202: the
+    account stays disabled, and the maintenance task finishes the deletion.
+    Sessions created before 0001_add_user_id.sql have user_id NULL, belong to
+    nobody, and are unaffected.
     """
     user_id = user.id
 
@@ -1279,11 +1304,15 @@ async def delete_account(body: DeleteAccountRequest, user: AuthedUser = Depends(
         raise HTTPException(status_code=403, detail="Incorrect password")
 
     try:
-        logger.info(f"Deleting auth user: {user_id[:8]}...")
-        await asyncio.to_thread(admin_client.auth.admin.delete_user, user_id)
-        logger.info(f"Auth user deleted: {user_id[:8]}...")
+        logger.info(f"Deleting account: {user_id[:8]}...")
+        status = await asyncio.to_thread(
+            analytics_privacy.delete_account, user_id, user.token, admin_client
+        )
+        if status == "pending":
+            return JSONResponse(status_code=202, content={"success": True, "status": "pending"})
+        logger.info(f"Account deleted: {user_id[:8]}...")
         audit.record("account_deleted", user_id=user_id)
-        return {"success": True, "message": "Account deleted"}
+        return {"success": True, "status": "deleted", "message": "Account deleted"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1292,6 +1321,91 @@ async def delete_account(body: DeleteAccountRequest, user: AuthedUser = Depends(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to delete account")
+
+
+class ConsentRequest(BaseModel):
+    granted: bool
+    source: Literal["signup", "prompt", "settings"]
+    wording_version: str = Field(..., min_length=1, max_length=32)
+
+
+def _require_privacy_store() -> None:
+    if get_admin_client() is None:
+        raise HTTPException(status_code=503, detail="Analytics settings are not available on this server")
+
+
+@app.get("/api/analytics/consent")
+async def get_analytics_consent(user: AuthedUser = Depends(read_user)):
+    _require_privacy_store()
+    try:
+        return await asyncio.to_thread(analytics_privacy.consent_status, user.id)
+    except Exception as e:
+        logger.error(f"Consent read failed: {type(e).__name__}")
+        observability.capture(e)
+        raise HTTPException(status_code=500, detail="Failed to read analytics settings")
+
+
+@app.put("/api/analytics/consent")
+async def set_analytics_consent(body: ConsentRequest, user: AuthedUser = Depends(write_user)):
+    _require_privacy_store()
+    try:
+        return await asyncio.to_thread(
+            analytics_privacy.change_consent, user.id, body.granted, body.wording_version, body.source
+        )
+    except analytics_privacy.ConsentConflict:
+        raise HTTPException(status_code=409, detail="Your earlier usage history is still being deleted")
+    except Exception as e:
+        logger.error(f"Consent change failed: {type(e).__name__}")
+        observability.capture(e)
+        raise HTTPException(status_code=500, detail="Failed to save analytics settings")
+
+
+@app.post("/api/analytics/consent/notice")
+async def ack_analytics_consent_notice(user: AuthedUser = Depends(write_user)):
+    _require_privacy_store()
+    try:
+        return await asyncio.to_thread(analytics_privacy.ack_notice, user.id)
+    except Exception as e:
+        logger.error(f"Consent notice failed: {type(e).__name__}")
+        observability.capture(e)
+        raise HTTPException(status_code=500, detail="Failed to update analytics settings")
+
+
+def _health_token_matches(authorization: Optional[str]) -> bool:
+    if not authorization or not authorization.startswith("Bearer "):
+        return False
+    presented = authorization[len("Bearer "):].strip().encode()
+    tokens = (os.getenv("PURGE_HEALTH_TOKEN", "").strip(), os.getenv("PURGE_HEALTH_TOKEN_PREVIOUS", "").strip())
+    # No short-circuit, so timing can't tell the two apart.
+    results = [bool(t) and hmac.compare_digest(presented, t.encode()) for t in tokens]
+    return any(results)
+
+
+@app.get("/api/internal/analytics/purge-health", include_in_schema=False)
+async def analytics_purge_health(request: Request, authorization: Optional[str] = Header(None)):
+    """Server to server, for purge-check.yml. Every refusal is a 404."""
+    decision = await _rate_limit_store.consume(f"internal:{request_ip(request)}", POLICIES["internal"])
+    if not decision.allowed or not _health_token_matches(authorization):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    now = datetime.now(timezone.utc)
+    try:
+        health = await asyncio.to_thread(analytics_privacy.store.health)
+        found = analytics_privacy.problems(health, now)
+    except Exception as e:
+        logger.warning(f"Analytics health read failed: {type(e).__name__}")
+        health, found = {}, ["health_check_failed"]
+
+    return JSONResponse(
+        headers={"Cache-Control": "no-store"},
+        content={
+            "ok": not found,
+            "urgent": "erasure_urgent" in found,
+            "problems": found,
+            "pending_erasures": health.get("pending_erasures"),
+            "last_purge_at": health.get("last_purge_at"),
+        },
+    )
 
 
 def _analytics_admin_ids() -> frozenset:
@@ -1396,7 +1510,17 @@ async def delete_session(
             raise HTTPException(status_code=404, detail="Session not found")
         
         logger.info(f"Session deleted successfully")
-        
+
+        # After the delete, so a ratings failure can't keep a chat the user removed.
+        # What's left holds no text, and goes with the account.
+        admin_client = get_admin_client()
+        if admin_client is not None:
+            try:
+                await asyncio.to_thread(feedback.delete_for_session, admin_client, user.id, session_id)
+            except Exception as e:
+                logger.warning(f"Ratings not deleted with their chat: {type(e).__name__}")
+                observability.capture(e)
+
         return {
             "success": True,
             "message": "Session deleted",

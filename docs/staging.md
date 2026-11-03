@@ -13,8 +13,8 @@ merge PR → main ──► staging (Render + Vercel preview) ──► smoke te
 
 - `main` deploys only to staging. Staging has its own Supabase project, keys and data.
 - [`smoke.yml`](../.github/workflows/smoke.yml) waits for each `main` commit to reach staging. It then signs
-  in as a test user, asks one real question and a follow-up, and checks that history saved them. It
-  deletes the test conversation at the end.
+  in as a test user, reads its analytics consent, asks one real question and a follow-up, and checks
+  that history saved them. It deletes the test conversation at the end.
 - [`promote.yml`](../.github/workflows/promote.yml) moves `release` forward to `main`. It refuses unless
   CI and the smoke test both passed for that exact commit.
 - Production deploys only from `release`.
@@ -70,6 +70,9 @@ Environment variables:
 | `SENTRY_DSN` | same as production |
 | `SENTRY_ENVIRONMENT` | `staging` |
 | `ANALYTICS_ADMIN_USER_IDS` | your staging user id |
+| `ANALYTICS_ID_SECRET` | `openssl rand -hex 32`, separate from production |
+| `ANALYTICS_AUDIT_LOG_SECRET` | `openssl rand -hex 32`, separate from production |
+| `PURGE_HEALTH_TOKEN` | `openssl rand -hex 32`, separate from production |
 
 When it's up, `https://vettan-ai-staging.onrender.com/health` should show `"status": "healthy"` and a
 `commit`.
@@ -127,7 +130,15 @@ cd frontend && npm run dev
 - Confirmation emails land in Mailpit at `http://127.0.0.1:54324`.
 - Studio is at `http://127.0.0.1:54323`.
 - To rebuild the database from the migrations, run `npx supabase@2.121.0 db reset`. This wipes local
-  data.
+  data, including the analytics key records, so reinstall those:
+
+  ```bash
+  cd backend
+  ANALYTICS_ID_SECRET=... SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+    venv/bin/python scripts/install_analytics_key.py id init
+  ANALYTICS_AUDIT_LOG_SECRET=... SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+    venv/bin/python scripts/install_analytics_key.py audit init
+  ```
 - The local stack still grants table access the old way, so it can't catch a missing grant. A new
   table's migration must grant access itself, like `0010`.
 

@@ -18,13 +18,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi.testclient import TestClient  # noqa: E402
 import main  # noqa: E402
+from tests.analytics_fakes import FakeAdminClient, FakePrivacyStore  # noqa: E402
+from utils import analytics_privacy  # noqa: E402
 
 ALICE = "11111111-1111-1111-1111-111111111111"
 CORRECT = "correct horse battery staple"
 
 client = TestClient(main.app, raise_server_exceptions=False)
 failures = []
-deleted = []
 
 
 def check(label, cond, detail=""):
@@ -33,17 +34,10 @@ def check(label, cond, detail=""):
         failures.append(label)
 
 
-class FakeAdminAPI:
-    def delete_user(self, uid):
-        deleted.append(uid)
-
-
-class FakeAdminClient:
-    class auth:
-        admin = FakeAdminAPI()
-
-
-main.get_admin_client = lambda: FakeAdminClient()
+admin = FakeAdminClient(FakePrivacyStore())
+analytics_privacy.store = admin.auth.admin.store
+deleted = admin.auth.admin.deleted
+main.get_admin_client = lambda: admin
 main._password_matches = lambda uid, pw: uid == ALICE and pw == CORRECT
 main.app.dependency_overrides[main.get_current_user] = \
     lambda: main.AuthedUser(id=ALICE, token="stub-token")

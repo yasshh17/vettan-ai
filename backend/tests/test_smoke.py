@@ -51,7 +51,10 @@ GOOD_RESEARCH = sse(
 GOOD_FOLLOWUP = sse(("token", {"text": "Short."}), ("done", {"session_id": "s1"}))
 
 
-def fake_backend(research=GOOD_RESEARCH, followup=GOOD_FOLLOWUP, commit="abc123", messages=4):
+GOOD_CONSENT = (200, {"decided": True, "granted": False, "erasure_pending": False, "erasure_completed": False})
+
+
+def fake_backend(research=GOOD_RESEARCH, followup=GOOD_FOLLOWUP, commit="abc123", messages=4, consent=GOOD_CONSENT):
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -61,6 +64,8 @@ def fake_backend(research=GOOD_RESEARCH, followup=GOOD_FOLLOWUP, commit="abc123"
             return httpx.Response(200, json={"status": "healthy", "commit": commit})
         if path == "/auth/v1/token":
             return httpx.Response(200, json={"access_token": "tok"})
+        if path == "/api/analytics/consent":
+            return httpx.Response(consent[0], json=consent[1])
         if path == "/api/research/stream":
             body = json.loads(request.content)
             calls.append(("BODY", body))
@@ -98,7 +103,8 @@ print("\nHappy path")
 client, calls = fake_backend()
 report, error = run_smoke(client)
 check("passes", error is None, str(error))
-check("reports every step", len(report) == 5, str(report))
+check("reports every step", len(report) == 6, str(report))
+check("reads the analytics consent", ("GET", "/api/analytics/consent") in calls)
 check("research skips the stored-answer cache", ("BODY", {"query": smoke.QUESTION, "use_cache": False}) in calls)
 check("reports the source count", any("1 sources" in line for line in report), str(report))
 check("cleans up the conversation", ("DELETE", "/api/history/s1") in calls)
@@ -107,6 +113,15 @@ print("\nFailures")
 client, _ = fake_backend(commit="old")
 _, error = run_smoke(client)
 check("old deploy never matches the expected commit", error and "commit abc123" in error, str(error))
+
+client, calls = fake_backend(consent=(500, {"detail": "Failed to read analytics settings"}))
+_, error = run_smoke(client)
+check("consent read failure fails the run", error and "consent returned 500" in error, str(error))
+check("no research runs after a consent failure", not any(c[0] == "BODY" for c in calls))
+
+client, _ = fake_backend(consent=(200, {"decided": False}))
+_, error = run_smoke(client)
+check("consent answer without granted fails the run", error and "granted" in error, str(error))
 
 client, _ = fake_backend(research=sse(("error", {"message": "boom"})))
 _, error = run_smoke(client)

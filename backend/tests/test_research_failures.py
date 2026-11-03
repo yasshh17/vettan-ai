@@ -116,7 +116,7 @@ class CaptureStore:
         self.rows = []
         self.lock = threading.Lock()
 
-    def insert(self, row):
+    def insert(self, row, user_id=None):
         with self.lock:
             self.rows.append(row)
 

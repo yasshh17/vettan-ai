@@ -21,6 +21,8 @@ EVENTS = frozenset({
     "spend_alert",
     "inflight_rejected",
     "account_deleted",
+    "account_deletion_pending",
+    "consent_changed",
     "admin_denied",
 })
 

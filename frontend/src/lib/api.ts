@@ -66,7 +66,7 @@ export const api = {
   deleteAccount: async (
     password: string,
     accessToken?: string
-  ): Promise<{ success: boolean; message: string }> => {
+  ): Promise<{ success: boolean; status: "deleted" | "pending"; message?: string }> => {
     // The backend re-checks the password: a session token alone can't delete
     // the account. Callers that already hold a token may pass it; otherwise
     // the shared helper reads the current session.
@@ -77,7 +77,7 @@ export const api = {
       })
       return response.data
     }
-    return authDelete<{ success: boolean; message: string }>(`${API_BASE_URL}/api/account`, {
+    return authDelete<{ success: boolean; status: "deleted" | "pending"; message?: string }>(`${API_BASE_URL}/api/account`, {
       data: { password },
     })
   }

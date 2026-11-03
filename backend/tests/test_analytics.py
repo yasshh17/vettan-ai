@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio  # noqa: E402
 import json  # noqa: E402
+import logging  # noqa: E402
 import re  # noqa: E402
 import threading  # noqa: E402
 import time  # noqa: E402
@@ -39,6 +40,15 @@ from agent import research_pipeline as rp  # noqa: E402
 from utils import analytics, analytics_summary, moderation  # noqa: E402
 
 failures = []
+log_lines = []
+
+
+class LogCapture(logging.Handler):
+    def emit(self, record):
+        log_lines.append(record.getMessage())
+
+
+logging.getLogger().addHandler(LogCapture())
 
 
 def check(label, cond, detail=""):
@@ -65,7 +75,7 @@ SECRET_EMAIL = "alice-secret@example.com"
 SECRETS = ("SECRETQUERY", "SECRETREPORT", "SECRETURL", "SECRETSUBQ", "SECRETHISTORY", SECRET_EMAIL, "stub-token")
 
 ROW_KEYS = {
-    "user_id", "session_id", "event_type", "request_type", "success", "failure_stage",
+    "event_type", "request_type", "success", "failure_stage",
     "cache_hit", "estimated_cost_usd", "metadata",
 } | set(analytics.MS_FIELDS) | set(analytics.COUNT_FIELDS)
 METADATA_KEYS = {"transport", "pipeline", "decomposition_fallback", "synthesis_ttft_ms", "input_tokens", "output_tokens",
@@ -170,15 +180,17 @@ class FakeDB:
 class CaptureStore:
     def __init__(self):
         self.rows = []
+        self.users = []
         self.lock = threading.Lock()
 
-    def insert(self, row):
+    def insert(self, row, user_id=None):
         with self.lock:
             self.rows.append(row)
+            self.users.append(user_id)
 
 
 class RaisingStore:
-    def insert(self, row):
+    def insert(self, row, user_id=None):
         raise RuntimeError(f"database is down; row was {row}")
 
 
@@ -186,7 +198,7 @@ class BlockingStore:
     def __init__(self):
         self.release = threading.Event()
 
-    def insert(self, row):
+    def insert(self, row, user_id=None):
         self.release.wait(10)
 
 
@@ -328,11 +340,11 @@ check("sync response shape unchanged", set(body) == {"output", "citations", "met
 check("sync response carries no analytics", '"analytics"' not in r.text)
 rows = rows_of(store)
 check("one research_completed event", [x["event_type"] for x in rows] == ["research_completed"], str(rows))
+check("  ...passing the user to the store, not the row", store.users == [ALICE], str(store.users))
 row = rows[0]
 check("  ...with request-level latency, cost and counts",
       row["total_latency_ms"] is not None and row["estimated_cost_usd"] == expected_cost
       and row["selected_source_count"] == 5 and row["metadata"]["transport"] == "sync", str(row))
-check("  ...and the session id it returned", row["session_id"] == body["session_id"])
 
 store = capture()
 r = client.post("/api/research/stream", json={"query": SECRET_QUERY})
@@ -351,8 +363,8 @@ client.post("/api/research/stream", json={"query": SECRET_QUERY})
 rows = rows_of(store)
 check("cache hits (sync + stream) -> cache_hit events",
       [x["event_type"] for x in rows] == ["cache_hit", "cache_hit"], str(rows))
-check("  ...flagged cache_hit with the cached session and source count",
-      all(x["cache_hit"] and x["session_id"] == SESSION and x["selected_source_count"] == 1 for x in rows))
+check("  ...flagged cache_hit with the source count",
+      all(x["cache_hit"] and x["selected_source_count"] == 1 for x in rows))
 FakeDB.cached = None
 
 store = capture()
@@ -371,9 +383,9 @@ r2 = client.post("/api/research/stream", json={"query": SECRET_QUERY, "session_i
 rows = rows_of(store)
 check("missing history: responses unchanged (404 / SSE error)",
       r1.status_code == 404 and sse_events(r2.text) == ["error"], f"{r1.status_code} {r2.text[:80]}")
-check("  ...recorded as followup_failed at stage 'history', no session id",
-      [(x["event_type"], x["failure_stage"], x["session_id"]) for x in rows]
-      == [("followup_failed", "history", None)] * 2, str(rows))
+check("  ...recorded as followup_failed at stage 'history'",
+      [(x["event_type"], x["failure_stage"]) for x in rows]
+      == [("followup_failed", "history")] * 2, str(rows))
 FakeDB.history = saved_history
 
 fake["search"] = "none"
@@ -469,7 +481,11 @@ store = capture()
 client.post("/api/research", json={"query": SECRET_QUERY})
 client.post("/api/research/stream", json={"query": SECRET_QUERY})
 moderation.check = real_check
-check("requests turned away before any work are not counted", rows_of(store) == [])
+rows = rows_of(store)
+check("requests turned away before any work are counted as blocked, with no category",
+      [(x["event_type"], x["failure_stage"]) for x in rows] == [("request_blocked", "moderation")] * 2
+      and "violence" not in json.dumps(rows), str(rows))
+check("  ...and never linked to a person", store.users == [None, None], str(store.users))
 
 
 # ---------------------------------------------------------------------------
@@ -493,6 +509,9 @@ dump = json.dumps(rows)
 check(f"captured {len(rows)} events across every path", len(rows) == 6, str(len(rows)))
 leaked = [s for s in SECRETS if s in dump]
 check("no sentinel text in any row", not leaked, str(leaked))
+leaked_logs = [line for line in log_lines if any(s in line for s in SECRETS)]
+check("no question, answer or search text in any log line", not leaked_logs, str(leaked_logs[:3]))
+check("logs were captured", len(log_lines) > 20, str(len(log_lines)))
 check("every row has exactly the allowed columns", all(set(x) == ROW_KEYS for x in rows),
       str([set(x) ^ ROW_KEYS for x in rows]))
 check("metadata keys are all allowlisted", all(set(x["metadata"]) <= METADATA_KEYS for x in rows))
@@ -518,9 +537,11 @@ check("build_event: unknown metric kwargs are not columns", "report" not in row)
 check("build_event: non-numeric / NaN / negative timings become None",
       (row["total_latency_ms"], row["search_latency_ms"], row["ttft_ms"]) == (None, None, None))
 check("build_event: counts are rounded ints", row["subquery_count"] == 4)
-row = analytics.build_event("research_failed", user_id="not-a-uuid", failure_stage=SECRET_QUERY)
-check("build_event: unknown stage -> 'internal', bad user id -> None",
-      (row["failure_stage"], row["user_id"]) == ("internal", None), str(row))
+row = analytics.build_event("research_failed", failure_stage=SECRET_QUERY)
+check("build_event: unknown stage -> 'internal'", row["failure_stage"] == "internal", str(row))
+row = analytics.build_event("research_completed", user_id=ALICE, session_id=SESSION)
+check("build_event: rows never hold a user or session id",
+      ALICE not in json.dumps(row) and SESSION not in json.dumps(row), str(row))
 
 
 # ---------------------------------------------------------------------------
@@ -654,11 +675,11 @@ class FakeAdminClient:
 
 now = datetime.now(timezone.utc)
 sample_rows = [
-    {"id": 1, "created_at": now.isoformat(), "user_id": ALICE, "event_type": "research_completed",
+    {"id": 1, "created_at": now.isoformat(), "actor_id": ALICE, "event_type": "research_completed",
      "request_type": "research", "failure_stage": None, "total_latency_ms": 9000, "ttft_ms": 4000,
      "search_latency_ms": 2000, "subquery_count": 3, "successful_search_count": 3, "total_search_count": 3,
      "selected_source_count": 5, "estimated_cost_usd": "0.0250"},
-    {"id": 2, "created_at": now.isoformat(), "user_id": BOB, "event_type": "research_failed",
+    {"id": 2, "created_at": now.isoformat(), "actor_id": BOB, "event_type": "research_failed",
      "request_type": "research", "failure_stage": "search", "total_latency_ms": 7000, "ttft_ms": None,
      "search_latency_ms": 6000, "subquery_count": 3, "successful_search_count": 0, "total_search_count": 3,
      "selected_source_count": 0, "estimated_cost_usd": 0.0241},
@@ -728,8 +749,9 @@ check("no policies (only the service role can read or write)", "create policy" n
 check("no grants to anon, authenticated or public",
       not re.search(r"grant[^;]*to[^;]*\b(anon|authenticated|public)\b", sql))
 check("no open USING (true)", "using (true)" not in sql.replace("  ", " "))
-check("user_id is set null on account deletion", "on delete set null" in sql)
-quoted = set(re.findall(r"'([a-z_]+)'", sql))
+with open(os.path.join(os.path.dirname(migration_path), "0011_analytics_privacy.sql")) as f:
+    quoted = set(re.findall(r"'([a-z_]+)'", f.read().lower()))
+quoted |= set(re.findall(r"'([a-z_]+)'", sql))
 check("SQL allows every event type the backend writes", analytics.EVENT_TYPES <= quoted)
 check("SQL allows every failure stage the backend writes", analytics.FAILURE_STAGES <= quoted)
 
@@ -767,7 +789,7 @@ check("window starts at midnight UTC, 6 days back", empty["from"] == "2026-10-06
 def ev(event_type, day=0, user=ALICE, **fields):
     created = (fixed_now - timedelta(days=day)).isoformat()
     request_type = "followup" if event_type.startswith("followup") else "research"
-    return {"created_at": created, "user_id": user, "event_type": event_type, "request_type": request_type, **fields}
+    return {"created_at": created, "actor_id": user, "event_type": event_type, "request_type": request_type, **fields}
 
 
 rows = [
@@ -865,7 +887,7 @@ check("retention, no data: 0 eligible and rate None",
 
 
 def seen(user, days_ago):
-    return {"user_id": user, "created_at": (fixed_now - timedelta(days=days_ago)).isoformat()}
+    return {"actor_id": user, "created_at": (fixed_now - timedelta(days=days_ago)).isoformat()}
 
 
 CAROL = "44444444-4444-4444-4444-444444444444"
@@ -875,7 +897,7 @@ activity = [
     seen(BOB, 40),                                    # never back
     seen(CAROL, 10), seen(CAROL, 9), seen(CAROL, 9),  # back on day 1, same day twice
     seen(DAVE, 0),                                    # first seen today
-    {"user_id": None, "created_at": fixed_now.isoformat()},
+    {"actor_id": None, "created_at": fixed_now.isoformat()},
 ]
 ret = analytics_summary.summarize_retention(activity, 7, fixed_now)
 check("d1: Alice, Bob, Carol eligible; only Carol back the next day",

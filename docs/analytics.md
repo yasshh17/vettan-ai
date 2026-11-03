@@ -1,22 +1,28 @@
 # Product analytics
 
-Vettan records one row per research or follow-up request in
-`public.analytics_events`. The admin summary endpoint turns those rows into
-7-day and 30-day metrics. No third-party analytics service is involved; the data
-stays in your Supabase project.
+Vettan records one row per research or follow-up request, and one per request a
+guard turned away, in `public.analytics_events`. The admin summary endpoint turns
+those rows into 7-day and 30-day metrics. No third-party analytics service is
+involved; the data stays in your Supabase project.
+
+Rows are linked to a person only with consent, through a coded ID. Withdrawal stops
+new links at once and deletes linked rows. Runbooks for the secrets, the purge and
+stuck erasures are in [analytics-operations.md](analytics-operations.md).
 
 - Writer: [`backend/utils/analytics.py`](../backend/utils/analytics.py)
+- Consent and erasure: [`backend/utils/analytics_privacy.py`](../backend/utils/analytics_privacy.py)
 - Summary: [`backend/utils/analytics_summary.py`](../backend/utils/analytics_summary.py)
-- Migrations: [`0008_analytics_events.sql`](../supabase/migrations/0008_analytics_events.sql), [`0009_answer_feedback.sql`](../supabase/migrations/0009_answer_feedback.sql)
-- Tests: [`test_analytics.py`](../backend/tests/test_analytics.py), [`test_feedback.py`](../backend/tests/test_feedback.py)
+- Migrations: [`0008_analytics_events.sql`](../supabase/migrations/0008_analytics_events.sql), [`0009_answer_feedback.sql`](../supabase/migrations/0009_answer_feedback.sql), [`0011_analytics_privacy.sql`](../supabase/migrations/0011_analytics_privacy.sql)
+- Tests: [`test_analytics.py`](../backend/tests/test_analytics.py), [`test_analytics_privacy.py`](../backend/tests/test_analytics_privacy.py), [`test_analytics_sql.py`](../backend/tests/test_analytics_sql.py), [`test_analytics_runbooks.py`](../backend/tests/test_analytics_runbooks.py), [`test_feedback.py`](../backend/tests/test_feedback.py)
 
 ## Setup
 
 1. **Apply the migrations.** In the Supabase SQL editor, run
-   `0008_analytics_events.sql`, then `0009_answer_feedback.sql`. Both are
-   idempotent and non-breaking. Until 0008 exists, analytics writes log a
-   warning and are dropped. Until 0009 exists, the thumbs return 500 and the
-   summary shows `feedback: null`.
+   `0008_analytics_events.sql`, `0009_answer_feedback.sql` and
+   `0011_analytics_privacy.sql`, before deploying the backend. All are idempotent
+   and non-breaking. Until 0011 exists, analytics writes log a warning and are
+   dropped, and account deletion returns 500. Until 0009 exists, the thumbs return
+   500 and the summary shows `feedback: null`.
 2. **Check that it is closed to clients.** With the anon key and no user JWT,
    this must return `permission denied` or `[]`:
 
@@ -35,6 +41,10 @@ stays in your Supabase project.
    | `SUPABASE_SERVICE_ROLE_KEY` | — | Required. Analytics writes and reads use the service role, the same client as the spend guard. Without it, nothing is recorded and the summary returns 503. |
    | `ANALYTICS_ADMIN_USER_IDS` | empty | Comma-separated Supabase auth user ids (UUIDs) allowed to read the summary. Empty means nobody can. Find your id under Authentication → Users. |
    | `ANALYTICS_ENABLED` | `true` | `false` stops all recording. |
+   | `ANALYTICS_ID_SECRET` | — | Makes coded IDs. Without it, or if it doesn't match the installed key, nothing is linked. See [the runbook](analytics-operations.md). |
+   | `ANALYTICS_AUDIT_LOG_SECRET` | — | Makes admin references in the access log. Never the same value as the id secret. |
+   | `PURGE_HEALTH_TOKEN` | — | Lets the health workflow read the health endpoint. Empty means the route always returns 404. |
+   | `PURGE_HEALTH_TOKEN_PREVIOUS` | — | Set only while rotating the token. |
    | `OPENAI_INPUT_USD_PER_1M` | `0.15` | gpt-4o-mini input price, used for the cost estimate. |
    | `OPENAI_OUTPUT_USD_PER_1M` | `0.60` | gpt-4o-mini output price. |
    | `TAVILY_USD_PER_SEARCH` | `0.008` | Price of one basic search (1 credit). **Set this to Tavily's real per-credit price.** The default is a placeholder, not a verified figure for your account. |
@@ -57,13 +67,17 @@ migration 0006. RLS is enabled, every privilege is revoked from `anon` and
 - No client can read any row through PostgREST, including the user's own rows.
 - No client can insert rows, so users can't skew the metrics.
 - Only the backend, using the service role, reads and writes. It returns
-  aggregates only, never rows or user ids.
+  aggregates only, never rows or coded ids.
+
+Migration 0011 follows the same pattern for every new table and revokes its
+functions from `anon` and `authenticated`.
 
 ## What is and isn't stored
 
-Each row holds the user's UUID, the session UUID, an event type, a failure
-stage, timings in milliseconds, counts, an estimated cost and a small metadata
-object. Metadata keys are allowlisted: `transport`, `pipeline`,
+Each row holds an event type, a failure stage, timings in milliseconds, counts, an
+estimated cost, a small metadata object, and a coded ID if the person had consented
+when the row was written. A row never holds an account or session id. Rows written
+before 0012 keep those two columns until that migration drops them. Metadata keys are allowlisted: `transport`, `pipeline`,
 `decomposition_fallback`, `synthesis_ttft_ms`, `input_tokens`, `output_tokens`
 and `cost_partial`. String values must come from a fixed set.
 
@@ -73,8 +87,12 @@ text, conversation history, source URLs or titles, emails, IP addresses and acce
 send marker strings through every endpoint path and fail if any of them
 reaches a row.
 
-When an account is deleted, `user_id` is set to null. The row stays as an
-anonymous count, and it stops counting toward daily active users.
+A coded ID is personal data, because whoever holds the secret can recreate it.
+
+Withdrawal stops new links immediately, then deletes every row with that person's
+coded ID. Account deletion runs the same erase, and only then removes the account.
+Rows with no coded ID were never linked to anyone, so they can't be deleted
+individually. They expire with the 90-day purge.
 
 ## Events
 
@@ -85,11 +103,12 @@ anonymous count, and it stops counting toward daily active users.
 | `cache_hit` | A stored report was served instead of running the pipeline. |
 | `followup_completed` | A follow-up returned an answer. |
 | `followup_failed` | A follow-up produced no usable answer. |
+| `request_blocked` | A guard turned the request away before any paid work. `failure_stage` holds the reason. |
 
-Requests turned away **before any paid work starts** are not recorded: the
-rate limit, the in-flight cap, input moderation, the spend cap and the schema
-check. These are policy decisions, not failures, and they already have
-`[Security]` audit lines.
+`request_blocked` is never linked to a person, and `moderation` never records the
+category, because a category such as self-harm can itself be sensitive. An outage
+in moderation or the spend ledger isn't a block, and isn't recorded. Audio requests
+aren't covered.
 
 | `failure_stage` | Meaning |
 |---|---|
@@ -102,6 +121,9 @@ check. These are policy decisions, not failures, and they already have
 | `pipeline` | The non-streaming pipeline raised an error. It runs as a single call, so the exact step is unknown. |
 | `client_disconnect` | The client closed the stream before it finished. |
 | `internal` | Any other error after work had started. |
+| `rate_limit` | `request_blocked` only: the rate limit or the in-flight cap. |
+| `spend_limit` | `request_blocked` only: a daily spend cap. |
+| `moderation` | `request_blocked` only: input moderation. |
 
 ## Metric definitions
 
@@ -126,7 +148,7 @@ All windows are **the last N UTC calendar days, including today so far**, so
 | `followups.latency_ms`, `followups.ttft_ms` | The same as for research, over `followup_completed` |
 | `failures_by_stage` | Count of failed events by stage, split into `research` and `followup` |
 | `daily[].requests` | Every event that UTC day |
-| `daily[].active_users` | Distinct non-null `user_id`s with at least one event that UTC day |
+| `daily[].active_users` | Distinct coded IDs with at least one event that UTC day. Consenting users only, so it undercounts real use. |
 
 Percentiles use linear interpolation, the same method as Postgres
 `percentile_cont`. Every distribution reports `samples`. A rate with a
@@ -178,10 +200,13 @@ not an accuracy score. Watch how it moves over time, and read it next to
 A cached answer comes back with ids that aren't saved, so its vote is counted
 but doesn't show again after a reload.
 
+Deleting a chat deletes its ratings. If that fails, the chat is still deleted, and
+the ratings go with the account.
+
 ## Retention
 
-Computed from `analytics_events`; nothing extra is tracked. A user's first-seen
-day is their earliest event in the last 90 days.
+Computed from `analytics_events`; nothing extra is tracked. Consenting users only.
+A user's first-seen day is their earliest linked event in the last 90 days.
 
 | Metric | Definition |
 |---|---|
