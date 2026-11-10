@@ -77,7 +77,7 @@ functions from `anon` and `authenticated`.
 Each row holds an event type, a failure stage, timings in milliseconds, counts, an
 estimated cost, a small metadata object, and a coded ID if the person had consented
 when the row was written. A row never holds an account or session id. Rows written
-before 0012 keep those two columns until that migration drops them. Metadata keys are allowlisted: `transport`, `pipeline`,
+before 0013 keep those two columns until that migration drops them. Metadata keys are allowlisted: `transport`, `pipeline`,
 `decomposition_fallback`, `synthesis_ttft_ms`, `input_tokens`, `output_tokens`
 and `cost_partial`. String values must come from a fixed set.
 
