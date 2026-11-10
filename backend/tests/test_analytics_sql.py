@@ -71,7 +71,7 @@ def connect(autocommit=True):
 db = connect()
 db.execute(BOOTSTRAP)
 for path in sorted(MIGRATIONS.glob("*.sql")):
-    if path.name.startswith(("0002", "0012")):
+    if path.name.startswith(("0002", "0013")):
         continue
     db.execute(path.read_text())
 db.execute((MIGRATIONS / "0011_analytics_privacy.sql").read_text())

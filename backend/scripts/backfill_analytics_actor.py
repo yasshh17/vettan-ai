@@ -1,6 +1,6 @@
 """
 Links old analytics_events rows to coded IDs, for people who have consented.
-Run once, before 0012_drop_analytics_identifiers.sql.
+Run once, before 0013_drop_analytics_identifiers.sql.
 
     ANALYTICS_ID_SECRET=... python scripts/backfill_analytics_actor.py
 """

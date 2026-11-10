@@ -35,7 +35,7 @@ old identifiers:
 ANALYTICS_ID_SECRET=... python backend/scripts/backfill_analytics_actor.py
 ```
 
-Check the result, then apply `0012_drop_analytics_identifiers.sql`.
+Check the result, then apply `0013_drop_analytics_identifiers.sql`.
 
 ## Secret rules
 

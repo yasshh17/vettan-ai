@@ -120,6 +120,9 @@ jobs:
           ANALYTICS_TEST_DATABASE_URL: postgresql://postgres@localhost:5432/postgres
         run: python tests/test_analytics_sql.py
 
+      - name: Migration safeupdate checks
+        run: python tests/test_migrations_safeupdate.py
+
       - name: Research failure tests
         run: python tests/test_research_failures.py
 
