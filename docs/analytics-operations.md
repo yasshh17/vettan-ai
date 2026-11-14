@@ -26,7 +26,8 @@ Do this on staging first, then production.
 7. Add GitHub configuration for `.github/workflows/purge-check.yml`: variables
    `STAGING_API_URL` and `PRODUCTION_API_URL`, and secrets
    `STAGING_PURGE_HEALTH_TOKEN` and `PRODUCTION_PURGE_HEALTH_TOKEN`. The production
-   check fails until its two values are set, so do this before merging.
+   check is skipped until `release` includes the analytics release, then fails until
+   its two values are set, so set them before promoting.
 
 After the release is live, record your own consent, then link old rows and drop the
 old identifiers:
