@@ -28,7 +28,31 @@ jobs:
             url_var: PRODUCTION_API_URL
             token_secret: PRODUCTION_PURGE_HEALTH_TOKEN
     steps:
+      - uses: actions/checkout@v7
+        if: matrix.target == 'production'
+        with:
+          fetch-depth: 0
+
+      # Production only has the endpoint once a promotion includes 9296230,
+      # the analytics consent merge (#86). Until then there's nothing to check.
+      - name: Check production has analytics
+        id: release
+        if: matrix.target == 'production'
+        run: |
+          # Exit 1 means "not included"; anything else is an error, not a skip.
+          rc=0
+          git merge-base --is-ancestor 9296230 origin/release || rc=$?
+          if [ "$rc" = 0 ]; then
+            echo "live=true" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" = 1 ]; then
+            echo "::notice::production doesn't have analytics yet"
+            echo "live=false" >> "$GITHUB_OUTPUT"
+          else
+            exit "$rc"
+          fi
+
       - name: Query the health endpoint
+        if: matrix.target == 'staging' || steps.release.outputs.live == 'true'
         env:
           API_URL: ${{ vars[matrix.url_var] }}
           TOKEN: ${{ secrets[matrix.token_secret] }}
