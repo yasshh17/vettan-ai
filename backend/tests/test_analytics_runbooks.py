@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -164,7 +165,12 @@ every = re.search(r'cron: "\d+ \*/(\d+) \* \* \*"', workflow)
 check("wakes a sleeping backend several times a day", every is not None and int(every.group(1)) <= 6)
 check("a target never falls back to the other's settings", "matrix.target == " not in workflow)
 
-script = textwrap.dedent(workflow.split("run: |\n", 1)[1])
+def step_script(name):
+    after = workflow.split(f"name: {name}\n", 1)[1]
+    return textwrap.dedent(after.split("run: |\n", 1)[1].split("\n\n", 1)[0])
+
+
+script = step_script("Query the health endpoint")
 
 
 def unconfigured_exit(target):
@@ -175,6 +181,16 @@ def unconfigured_exit(target):
 
 check("unconfigured staging only warns", unconfigured_exit("staging") == 0)
 check("unconfigured production fails", unconfigured_exit("production") != 0)
+
+# A repo where the release check can't run must fail, not skip production.
+with tempfile.TemporaryDirectory() as repo:
+    subprocess.run(["git", "init", "-q", repo], check=True)
+    output = Path(repo) / "output"
+    env = {"PATH": os.environ["PATH"], "GITHUB_OUTPUT": str(output)}
+    gate = subprocess.run(["bash", "-e", "-c", step_script("Check production has analytics")],
+                          cwd=repo, env=env, capture_output=True)
+    check("a failed release check doesn't skip production",
+          gate.returncode != 0 and not output.exists(), gate.stdout)
 
 if failures:
     print(f"\n{len(failures)} FAILED: {failures}")

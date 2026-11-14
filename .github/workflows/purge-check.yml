@@ -24,12 +24,14 @@ jobs:
           - target: staging
             url_var: STAGING_API_URL
             token_secret: STAGING_PURGE_HEALTH_TOKEN
+            release_gated: false
           - target: production
             url_var: PRODUCTION_API_URL
             token_secret: PRODUCTION_PURGE_HEALTH_TOKEN
+            release_gated: true
     steps:
       - uses: actions/checkout@v7
-        if: matrix.target == 'production'
+        if: matrix.release_gated
         with:
           fetch-depth: 0
 
@@ -37,7 +39,7 @@ jobs:
       # the analytics consent merge (#86). Until then there's nothing to check.
       - name: Check production has analytics
         id: release
-        if: matrix.target == 'production'
+        if: matrix.release_gated
         run: |
           # Exit 1 means "not included"; anything else is an error, not a skip.
           rc=0
@@ -52,7 +54,7 @@ jobs:
           fi
 
       - name: Query the health endpoint
-        if: matrix.target == 'staging' || steps.release.outputs.live == 'true'
+        if: ${{ !matrix.release_gated || steps.release.outputs.live == 'true' }}
         env:
           API_URL: ${{ vars[matrix.url_var] }}
           TOKEN: ${{ secrets[matrix.token_secret] }}
