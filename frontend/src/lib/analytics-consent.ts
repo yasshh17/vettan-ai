@@ -31,7 +31,7 @@ export interface ConsentStatus {
 
 export const getConsent = () => authGet<ConsentStatus>(CONSENT_URL)
 
-export const saveConsent = (granted: boolean, source: "prompt" | "settings") =>
+export const saveConsent = (granted: boolean, source: "signup" | "prompt" | "settings") =>
   authPut<ConsentStatus>(CONSENT_URL, { granted, source, wording_version: CONSENT_WORDING_VERSION })
 
 export const ackErasureNotice = () => authPost<ConsentStatus>(`${CONSENT_URL}/notice`, {})
