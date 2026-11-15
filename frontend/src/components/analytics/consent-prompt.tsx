@@ -18,8 +18,23 @@ import {
   getConsent,
   saveConsent,
 } from "@/lib/analytics-consent"
+import { createClient } from "@/lib/supabase/client"
 
 const CHOICE_CLASS = "flex-1 bg-neutral-800 text-neutral-100 hover:bg-neutral-700"
+
+// The sign-up callback's save gives up while a sleeping backend wakes, so save
+// the choice from the sign-up box here rather than ask again.
+async function savedSignUpChoice() {
+  try {
+    const { data } = await createClient().auth.getSession()
+    const choice = data.session?.user?.user_metadata?.analytics_consent
+    if (typeof choice !== "boolean") return false
+    await saveConsent(choice, "signup")
+    return true
+  } catch {
+    return false
+  }
+}
 
 // Asks accounts with no decision, and shows the notice when a withdrawal's erase
 // finishes. Closing without a choice saves nothing; it asks again next session.
@@ -31,9 +46,11 @@ export function ConsentPrompt() {
   useEffect(() => {
     let cancelled = false
     getConsent()
-      .then((status) => {
+      .then(async (status) => {
         if (cancelled) return
-        if (status.decided === false) setOpen(true)
+        if (status.decided === false && !(await savedSignUpChoice())) {
+          if (!cancelled) setOpen(true)
+        }
         if (status.erasure_completed) {
           toast({ title: "Product analytics", description: WITHDRAWAL_DONE })
           ackErasureNotice().catch(() => {})

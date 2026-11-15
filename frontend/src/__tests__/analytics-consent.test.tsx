@@ -3,12 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const signUp = vi.fn()
 const signInWithPassword = vi.fn()
+const sessionMetadata: { value: Record<string, unknown> } = { value: {} }
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     auth: {
       signUp: (...a: unknown[]) => signUp(...a),
       signInWithPassword: (...a: unknown[]) => signInWithPassword(...a),
-      getSession: async () => ({ data: { session: { access_token: "t" } } }),
+      getSession: async () => ({
+        data: { session: { access_token: "t", user: { user_metadata: sessionMetadata.value } } },
+      }),
       resend: vi.fn(),
     },
   }),
@@ -62,6 +65,7 @@ function openSettings() {
 }
 
 beforeEach(() => {
+  sessionMetadata.value = {}
   signUp.mockResolvedValue({ data: { user: { identities: [{}] }, session: null }, error: null })
   authGet.mockResolvedValue(granted)
   authPut.mockResolvedValue(declined)
@@ -135,6 +139,27 @@ describe("one-time prompt", () => {
 
     await waitFor(() => expect(screen.queryByRole("button", { name: "No thanks" })).toBeNull())
     expect(authPut).not.toHaveBeenCalled()
+  })
+
+  // The callback's save gives up while a sleeping backend wakes, so the app
+  // saves the sign-up choice instead of asking again.
+  it.each([false, true])("saves a sign-up choice of %s instead of asking", async (choice) => {
+    authGet.mockResolvedValue(undecided)
+    sessionMetadata.value = { analytics_consent: choice }
+    render(<ConsentPrompt />)
+
+    await waitFor(() => expect(authPut).toHaveBeenCalledTimes(1))
+    expect(authPut.mock.calls[0][1]).toMatchObject({ granted: choice, source: "signup" })
+    expect(screen.queryByRole("button", { name: "No thanks" })).toBeNull()
+  })
+
+  it("asks if saving the sign-up choice fails", async () => {
+    authGet.mockResolvedValue(undecided)
+    authPut.mockRejectedValue(new Error("network"))
+    sessionMetadata.value = { analytics_consent: false }
+    render(<ConsentPrompt />)
+
+    expect(await screen.findByRole("button", { name: "No thanks" })).toBeTruthy()
   })
 
   it("stays out of the way once decided", async () => {
