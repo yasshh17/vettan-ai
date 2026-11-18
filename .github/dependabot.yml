@@ -26,6 +26,10 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
+    # A new Python minor also needs .python-version, runtime.txt and CI changed, so do it by hand.
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # GitHub Actions themselves (e.g. actions/checkout, gitleaks-action)
   - package-ecosystem: "github-actions"
