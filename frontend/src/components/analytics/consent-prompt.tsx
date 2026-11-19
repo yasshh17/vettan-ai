@@ -81,7 +81,13 @@ export function ConsentPrompt() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent>
+      {/* Enter shouldn't grant consent, so neither choice starts focused. */}
+      <DialogContent
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement).focus()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Product analytics</DialogTitle>
           <DialogDescription>{CONSENT_LABEL}</DialogDescription>

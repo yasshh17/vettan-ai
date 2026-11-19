@@ -122,6 +122,19 @@ describe("one-time prompt", () => {
     expect(yes.className).toBe(no.className)
   })
 
+  it("doesn't start with either choice focused", async () => {
+    authGet.mockResolvedValue(undecided)
+    render(<ConsentPrompt />)
+    const yes = await screen.findByRole("button", { name: "Yes, that's fine" })
+    const no = screen.getByRole("button", { name: "No thanks" })
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("dialog")))
+    expect(document.activeElement).not.toBe(yes)
+    expect(document.activeElement).not.toBe(no)
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" })
+    expect(authPut).not.toHaveBeenCalled()
+  })
+
   it("saves the choice as a prompt decision", async () => {
     authGet.mockResolvedValue(undecided)
     render(<ConsentPrompt />)
