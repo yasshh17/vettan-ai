@@ -4,6 +4,9 @@ local time, which Postgres reads as UTC.
 
     python tests/test_timestamps.py
 """
+import contextlib
+import io
+import logging
 import os
 import sys
 
@@ -120,6 +123,19 @@ db.save_session("q", "r" * 200, [], {}, ALICE)
 messages = [row for table, payload in db.client.writes if table == "messages" for row in payload]
 check("save_session still orders the assistant message after the user message",
       len(messages) == 2 and messages[0]["created_at"] < messages[1]["created_at"], str(messages))
+
+print("\n[3] A rename doesn't put the title in the logs")
+lines = []
+handler = logging.Handler()
+handler.emit = lambda record: lines.append(record.getMessage())
+logging.getLogger().addHandler(handler)
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    fake_db().update_session(SESSION, {"query": "SECRETTITLE-31f"}, ALICE)
+logging.getLogger().removeHandler(handler)
+logged = out.getvalue() + "\n".join(lines)
+check("the new title isn't logged", "SECRETTITLE" not in logged, logged)
+check("  ...the field names are", "query" in logged, logged)
 
 print()
 if failures:

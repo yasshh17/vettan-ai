@@ -7,7 +7,8 @@ involved; the data stays in your Supabase project.
 
 Rows are linked to a person only with consent, through a coded ID. Withdrawal stops
 new links at once and deletes linked rows. Runbooks for the secrets, the purge and
-stuck erasures are in [analytics-operations.md](analytics-operations.md).
+stuck erasures are in [analytics-operations.md](analytics-operations.md). Every table, with its legal
+basis and retention, is listed in [data-inventory.md](data-inventory.md).
 
 - Writer: [`backend/utils/analytics.py`](../backend/utils/analytics.py)
 - Usage events: [`backend/utils/product_events.py`](../backend/utils/product_events.py)
@@ -130,7 +131,8 @@ aren't covered.
 
 `product_events` records what people do in the app, such as opening a chat. It is
 stored only for people who said yes, and always under their coded ID. The database
-checks consent again at write time and drops the event if the answer is no.
+checks consent again at write time and drops the event if the answer is no. Rows
+are deleted after 90 days.
 
 | Event | Sent by | Props |
 |---|---|---|

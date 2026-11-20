@@ -5,6 +5,8 @@ import { fillPlaceholders, loadLegalDoc, smartQuotes } from "@/lib/legal"
 import { LegalMarkdown } from "@/components/legal/legal-markdown"
 import { RefusalBanner } from "@/components/research/refusal-banner"
 import { SignUpConsent } from "@/components/legal/legal-links"
+import { ACCOUNT_DELETION_NOTE, WITHDRAWAL_NOTE } from "@/lib/analytics-consent"
+import { PRIVACY } from "@/content/legal/privacy"
 
 afterEach(cleanup)
 
@@ -52,6 +54,16 @@ describe("legal documents", () => {
     expect(h2?.id).toBe("12-availability-and-discontinuation")
     expect(h2?.textContent).toContain("12")
     expect(h2?.textContent).toContain("Availability and discontinuation")
+  })
+
+  // The app shows these in Settings; the policy must say exactly the same.
+  it("the privacy policy states the analytics notes word for word", () => {
+    expect(PRIVACY).toContain(WITHDRAWAL_NOTE)
+    expect(PRIVACY).toContain(ACCOUNT_DELETION_NOTE)
+    expect(PRIVACY).toContain(
+      "Records that were never linked to a coded ID, such as system totals, can't be matched to you, " +
+        "so we can't delete them individually. They're removed under our 90-day retention period."
+    )
   })
 
   it("the privacy policy's tables render as tables", () => {
