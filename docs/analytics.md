@@ -156,6 +156,16 @@ Nothing is stored for admins (`ANALYTICS_ADMIN_USER_IDS`), when the request has
 `ANALYTICS_ID_SECRET` is missing. In those cases, and when consent is off, the
 response says `stop: true` so the tracker stops sending.
 
+The browser tracker is [`frontend/src/lib/analytics.ts`](../frontend/src/lib/analytics.ts).
+It sends nothing until `GET /api/analytics/consent` has answered `granted` on this
+page. Events made before that are dropped, not held. Withdrawal clears the queue
+and the `visit_id`, and a later grant starts a new one. It never sends with Global
+Privacy Control on or in development. Batches go every 5 seconds, and with
+`keepalive` when the page is hidden or on sign-out; a batch that fails is not
+retried. `page_viewed` and `signed_in` are recorded once consent is known, so a
+page view still counts when the consent check is slow. A signed-out visitor
+causes no consent request.
+
 ## Metric definitions
 
 All windows are **the last N UTC calendar days, including today so far**, so

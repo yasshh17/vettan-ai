@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { ConsentPrompt } from "@/components/analytics/consent-prompt"
+import { SUGGESTED_QUESTIONS } from "@/lib/suggested-questions"
 import Sidebar from "@/components/layout/sidebar"
 import { VoiceMode } from "@/components/research/voice-mode"
 import { AudioPlayer } from "@/components/research/audio-player"
@@ -797,12 +798,7 @@ export default function Home() {
               <div className="space-y-3 animate-in fade-in duration-700 delay-500">
                 <p className="text-sm text-neutral-500 text-center">Try asking:</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {[
-                    "Best AI browsers right now",
-                    "How do RAG systems work?",
-                    "AI investment trends to watch",
-                    "Cancer vaccine developments"
-                  ].map((prompt, i) => (
+                  {SUGGESTED_QUESTIONS.map((prompt, i) => (
                     <button
                       key={i}
                       onClick={() => {

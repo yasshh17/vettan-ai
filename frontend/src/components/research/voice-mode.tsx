@@ -43,7 +43,8 @@ export function VoiceMode({ isOpen, onClose }: VoiceModeProps) {
         body: JSON.stringify({
           query: text,
           max_iterations: 25,
-          use_cache: true
+          use_cache: true,
+          source: 'voice'
         })
       })
 

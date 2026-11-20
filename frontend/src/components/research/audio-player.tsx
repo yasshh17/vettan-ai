@@ -7,6 +7,7 @@ import { Volume2, Download, Loader2, Play, Pause, RotateCcw, Sparkles, X } from 
 import { authPost, API_BASE_URL, ContentBlockedError, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
 import { useToast } from "@/hooks/use-toast"
 import { DEFAULT_VOICE, VOICES } from "@/lib/voices"
+import { track } from "@/lib/analytics"
 
 const API_URL = API_BASE_URL
 
@@ -142,6 +143,7 @@ export function AudioPlayer({ text }: AudioPlayerProps) {
   
   const handleDownload = () => {
     if (!audioUrl) return
+    track('audio_downloaded')
     const a = document.createElement('a')
     a.href = audioUrl
     a.download = `vettan-report-${Date.now()}.mp3`

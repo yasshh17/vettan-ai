@@ -29,9 +29,49 @@ export interface ConsentStatus {
   erasure_completed: boolean
 }
 
-export const getConsent = () => authGet<ConsentStatus>(CONSENT_URL)
+/** What this page knows. "unknown" until the server answers; "off" covers undecided too. */
+export type ConsentState = "unknown" | "granted" | "off"
+
+let state: ConsentState = "unknown"
+const listeners = new Set<(state: ConsentState) => void>()
+let asked = 0
+let applied = 0
+let reading: Promise<ConsentStatus> | null = null
+
+export const consentState = (): ConsentState => state
+
+export function onConsentChange(listener: (state: ConsentState) => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+// Answers apply in the order they were asked, so an older read can't undo a newer save.
+function follow(request: Promise<ConsentStatus>): Promise<ConsentStatus> {
+  const n = ++asked
+  return request.then((status) => {
+    if (n > applied) {
+      applied = n
+      const next = status.granted ? "granted" : "off"
+      if (next !== state) {
+        state = next
+        listeners.forEach((listener) => listener(next))
+      }
+    }
+    return status
+  })
+}
+
+/** Callers at the same time share one request. */
+export function getConsent(): Promise<ConsentStatus> {
+  reading ??= follow(authGet<ConsentStatus>(CONSENT_URL)).finally(() => {
+    reading = null
+  })
+  return reading
+}
 
 export const saveConsent = (granted: boolean, source: "signup" | "prompt" | "settings") =>
-  authPut<ConsentStatus>(CONSENT_URL, { granted, source, wording_version: CONSENT_WORDING_VERSION })
+  follow(authPut<ConsentStatus>(CONSENT_URL, { granted, source, wording_version: CONSENT_WORDING_VERSION }))
 
-export const ackErasureNotice = () => authPost<ConsentStatus>(`${CONSENT_URL}/notice`, {})
+export const ackErasureNotice = () => follow(authPost<ConsentStatus>(`${CONSENT_URL}/notice`, {}))

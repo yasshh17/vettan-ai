@@ -2,12 +2,16 @@ import { authFetch } from "@/lib/auth-fetch"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
+/** How the question was entered. Analytics only. */
+export type QuestionSource = "typed" | "suggested" | "voice"
+
 export interface ResearchPayload {
   query: string
   max_iterations?: number
   use_cache?: boolean
   session_id?: string
   is_followup?: boolean
+  source?: QuestionSource
 }
 
 /** "submitted" and "aborted" are client-side; the rest are SSE frames. */

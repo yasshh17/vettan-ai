@@ -5,6 +5,8 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { getConsent } from "@/lib/analytics-consent"
+import { track, trackingAllowed } from "@/lib/analytics"
 import { AuthCard } from "@/components/auth/auth-card"
 import { AuthField } from "@/components/auth/auth-field"
 import { PendingQuestionNote } from "@/components/auth/pending-question-note"
@@ -74,6 +76,9 @@ export function SignInForm({ initialError = "" }: { initialError?: string }) {
         setLoading(false)
         return
       }
+
+      // Recorded once consent is known; until then there's nothing to record it against.
+      if (trackingAllowed()) getConsent().then(() => track("signed_in"), () => {})
 
       router.push("/app")
       router.refresh()
