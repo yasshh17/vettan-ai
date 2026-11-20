@@ -1,8 +1,9 @@
 """
 Links old analytics_events rows to coded IDs, for people who have consented.
-Run once, before 0013_drop_analytics_identifiers.sql.
+Run once, before 0013_drop_analytics_identifiers.sql. Enter ANALYTICS_ID_SECRET as in
+docs/analytics-operations.md, "Entering secrets".
 
-    ANALYTICS_ID_SECRET=... python scripts/backfill_analytics_actor.py
+    python scripts/backfill_analytics_actor.py
 """
 import os
 import sys

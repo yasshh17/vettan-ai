@@ -2,9 +2,10 @@
 Post-deploy smoke test: sign in, read the analytics consent, ask one real question, ask a
 follow-up, check history.
 
-Run by .github/workflows/smoke.yml against staging, or by hand:
-    API_URL=... SUPABASE_URL=... SUPABASE_ANON_KEY=... SMOKE_EMAIL=... SMOKE_PASSWORD=... \
-        python scripts/smoke.py
+Run by .github/workflows/smoke.yml against staging, or by hand with API_URL, SUPABASE_URL,
+SUPABASE_ANON_KEY (the publishable key) and SMOKE_EMAIL exported, and SMOKE_PASSWORD
+entered as in docs/analytics-operations.md, "Entering secrets":
+    python scripts/smoke.py
 
 EXPECT_COMMIT (optional) makes it wait until /health reports that commit, so it
 tests the new deploy rather than the old one. smoke.yml passes the latest commit

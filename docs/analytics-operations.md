@@ -14,11 +14,14 @@ Do this on staging first, then production.
 4. Set them on the Render backend service: `ANALYTICS_ID_SECRET`,
    `ANALYTICS_AUDIT_LOG_SECRET` and `PURGE_HEALTH_TOKEN`.
 5. Store a recovery copy of both secrets in your password manager, as separate entries.
-6. From a trusted machine, with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set:
+6. From a trusted machine, with the Supabase values entered as in
+   [Entering secrets](#entering-secrets):
 
    ```bash
-   ANALYTICS_ID_SECRET=... python backend/scripts/install_analytics_key.py id init
-   ANALYTICS_AUDIT_LOG_SECRET=... python backend/scripts/install_analytics_key.py audit init
+   ask ANALYTICS_ID_SECRET
+   ask ANALYTICS_AUDIT_LOG_SECRET
+   python backend/scripts/install_analytics_key.py id init
+   python backend/scripts/install_analytics_key.py audit init
    ```
 
    This stores fingerprints only. Until it runs, nothing is linked and the health
@@ -33,7 +36,8 @@ After the release is live, record your own consent, then link old rows and drop 
 old identifiers:
 
 ```bash
-ANALYTICS_ID_SECRET=... python backend/scripts/backfill_analytics_actor.py
+ask ANALYTICS_ID_SECRET
+python backend/scripts/backfill_analytics_actor.py
 ```
 
 Check the result, then apply `0013_drop_analytics_identifiers.sql`.
@@ -47,7 +51,9 @@ access log can't be joined with analytics.
 - Keep them on the Render backend service only. Never in Vercel, frontend code,
   Supabase, CI, the repo, logs or tickets.
 - Only the backend process and the account owner can read them.
-- Pass them to scripts by environment variable, never as a command-line argument.
+- Pass them to scripts through the environment, entered as in
+  [Entering secrets](#entering-secrets). Never as a command-line argument, and never
+  typed in front of the command, where shell history keeps them.
 - Local development and tests use fake values.
 - Service-role database access doesn't reveal them. That separation is why a coded
   ID is worth having.
@@ -57,6 +63,38 @@ A missing or wrong `ANALYTICS_ID_SECRET` writes no linked rows and no product ev
 never a raw account id. Essential rows continue unlinked. The stored fingerprint only
 changes through this runbook, so a secret can't be replaced silently.
 
+## Entering secrets
+
+A secret typed into a command, like `ANALYTICS_ID_SECRET=abc… python …`, is saved in
+shell history. Enter it at a hidden prompt instead. Define this once in the terminal;
+it works in zsh and bash:
+
+```bash
+ask() { printf '%s: ' "$1"; read -rs "$1"; echo; export "$1"; }
+```
+
+Then run `ask ANALYTICS_ID_SECRET` and paste the value. It isn't shown and isn't saved.
+
+Every script below also needs the Supabase project and a secret key (`sb_secret_…`):
+
+```bash
+export SUPABASE_URL=https://<ref>.supabase.co
+ask SUPABASE_SERVICE_ROLE_KEY
+```
+
+- Use one terminal for one runbook at a time.
+- When you're done, `unset` each secret, or close the terminal.
+- Never paste a secret into chat or a ticket, and never screenshot a revealed value.
+- Before you replace or delete any stored copy of a secret, check its fingerprint:
+
+  ```bash
+  python -c 'import sys; sys.path.insert(0, "backend"); from utils.analytics_keys import fingerprint; f = fingerprint("id"); print(f[:12] if f else "not set")'
+  ```
+
+  Use `"audit"` for `ANALYTICS_AUDIT_LOG_SECRET`. The result must match
+  `select name, left(fingerprint, 12) from analytics_key_check;` for that name. If it
+  doesn't, that copy is the wrong one.
+
 ## Rotating `ANALYTICS_ID_SECRET`
 
 Rotate on suspected exposure or a change in who has access. Review once a year
@@ -64,15 +102,17 @@ whether rotation is needed.
 
 1. Set `ANALYTICS_ENABLED=false` on the backend.
 2. Generate the new value, and store its recovery copy.
-3. Re-key every linked row:
+3. Re-key every linked row. Enter the current value as `_OLD`, then the new one:
 
    ```bash
-   ANALYTICS_ID_SECRET_OLD=<current> ANALYTICS_ID_SECRET=<new> \
-     python backend/scripts/rekey_analytics_actor.py
+   ask ANALYTICS_ID_SECRET_OLD
+   ask ANALYTICS_ID_SECRET
+   python backend/scripts/rekey_analytics_actor.py
    ```
 
 4. Set the new value on Render, and `ANALYTICS_ENABLED=true`.
-5. Confirm the health check passes, then remove the old recovery copy.
+5. Confirm the health check passes and the new recovery copy's fingerprint matches,
+   then remove the old recovery copy.
 
 Emergency replacement is the same, done immediately. If the database could also have
 been read, treat it as a possible breach under section 10 of the privacy policy.
@@ -82,8 +122,9 @@ been read, treat it as a possible breach under section 10 of the privacy policy.
 Same triggers. Old log entries aren't re-keyed; each entry records its `key_epoch`.
 
 ```bash
-ANALYTICS_AUDIT_LOG_SECRET_OLD=<current> ANALYTICS_AUDIT_LOG_SECRET=<new> \
-  python backend/scripts/install_analytics_key.py audit rotate
+ask ANALYTICS_AUDIT_LOG_SECRET_OLD
+ask ANALYTICS_AUDIT_LOG_SECRET
+python backend/scripts/install_analytics_key.py audit rotate
 ```
 
 Then set the new value on Render.
@@ -92,7 +133,8 @@ Then set the new value on Render.
 and admin reads of consent data stay blocked until a new value is installed:
 
 ```bash
-ANALYTICS_AUDIT_LOG_SECRET=<new> python backend/scripts/install_analytics_key.py audit after_loss
+ask ANALYTICS_AUDIT_LOG_SECRET
+python backend/scripts/install_analytics_key.py audit after_loss
 ```
 
 Record the loss in this file's incident notes. It never affects coded IDs, consent,
@@ -142,7 +184,8 @@ Then install a new secret:
 2. Run:
 
    ```bash
-   ANALYTICS_ID_SECRET=<new> python backend/scripts/install_analytics_key.py id after_loss
+   ask ANALYTICS_ID_SECRET
+   python backend/scripts/install_analytics_key.py id after_loss
    ```
 
 Linked analytics restarts empty.
@@ -229,7 +272,8 @@ Render offers no IP allowlist on this setup, so protection is at the application
 Coded data is personal data. For an access request from an account's owner:
 
 ```bash
-ANALYTICS_ID_SECRET=... python backend/scripts/export_analytics_subject.py <user-id>
+ask ANALYTICS_ID_SECRET
+python backend/scripts/export_analytics_subject.py <user-id>
 ```
 
 The output is personal data, so send it only to that person.

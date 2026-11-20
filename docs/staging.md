@@ -37,7 +37,10 @@ example `yasshh17s-projects`).
 4. Under Authentication → Users → Add user, create the smoke test user (for example
    `smoke@<your-domain>`) with a long random password, and tick "Auto confirm". Then create your own
    login too. Leave CAPTCHA off on staging: the smoke test signs in with a password through the API.
-5. From Project Settings → API, copy the project URL, the anon key and the service role key.
+5. From Project Settings → API Keys, note the project URL and the **publishable** key
+   (`sb_publishable_…`), and create one **secret** key per backend (`sb_secret_…`, for example
+   `render_staging`). Don't use the legacy `anon` and `service_role` keys: Supabase retires them in
+   early 2027.
 
 ### 2. Staging API keys
 - **OpenAI:** create a separate project called `vettan-staging` with its own key and a low monthly budget
@@ -60,7 +63,9 @@ Environment variables:
 
 | Variable | Value |
 |---|---|
-| `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | from the staging project |
+| `SUPABASE_URL` | the staging project URL |
+| `SUPABASE_KEY` | the staging publishable key (`sb_publishable_…`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | a staging secret key (`sb_secret_…`) |
 | `OPENAI_API_KEY`, `TAVILY_API_KEY` | the staging keys |
 | `CORS_ORIGINS` | `http://localhost:3000` |
 | `CORS_ORIGIN_REGEX` | `https://vettan-[a-z0-9-]+-<scope>\.vercel\.app` |
@@ -85,7 +90,7 @@ value. No variable should carry production values under "All environments".
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `https://vettan-ai.onrender.com` | `https://vettan-ai-staging.onrender.com` |
 | `NEXT_PUBLIC_SUPABASE_URL` | production project | staging project |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | production project | staging project |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | production project | staging publishable key |
 
 Redeploy a preview, then sign in on it. In the browser's network tab, requests should go to
 `vettan-ai-staging.onrender.com`.
@@ -97,7 +102,7 @@ Go to Settings → Secrets and variables → Actions.
   - `STAGING_API_URL`: `https://vettan-ai-staging.onrender.com`
   - `STAGING_SUPABASE_URL`: the staging project URL
 - **Secrets:**
-  - `STAGING_SUPABASE_ANON_KEY`
+  - `STAGING_SUPABASE_ANON_KEY`: the staging publishable key
   - `SMOKE_EMAIL`
   - `SMOKE_PASSWORD`
 
@@ -167,6 +172,16 @@ cd frontend && npm run dev
   Rollback to pick the deploy that was live before.
 - Check production `/health` and the site. Vercel's Overview card can show an old deploy, so trust the
   site itself.
+
+## Rotating a Supabase key
+1. In Supabase → Project Settings → API Keys, create a new secret key.
+2. Replace the old one wherever it's set: Render's `SUPABASE_SERVICE_ROLE_KEY`, and anything else that
+   uses it. Copy it with the copy icon, straight into the field.
+3. Run the smoke test and Analytics health. Both must pass.
+4. Delete the old key in Supabase.
+
+Staging's legacy `anon` and `service_role` keys are disabled, and the legacy JWT secret that signed
+them is revoked. Production still uses legacy keys and needs the same move before early 2027.
 
 ## Dependency updates
 - **Grouped minor and patch updates:** merge when CI is green, then release as usual.
