@@ -1,10 +1,10 @@
 """
-Records a secret's fingerprint. Never sends the secret. See docs/analytics-operations.md.
+Records a secret's fingerprint. Never sends the secret. Enter the secret first, and
+its _OLD value to rotate, as in docs/analytics-operations.md, "Entering secrets".
 
-    ANALYTICS_ID_SECRET=... python scripts/install_analytics_key.py id init
-    ANALYTICS_AUDIT_LOG_SECRET=... ANALYTICS_AUDIT_LOG_SECRET_OLD=... \
-        python scripts/install_analytics_key.py audit rotate
-    ANALYTICS_ID_SECRET=... python scripts/install_analytics_key.py id after_loss
+    python scripts/install_analytics_key.py id init
+    python scripts/install_analytics_key.py audit rotate
+    python scripts/install_analytics_key.py id after_loss
 """
 import os
 import sys

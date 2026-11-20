@@ -1,8 +1,9 @@
 """
 Prints one person's analytics consent record and linked rows, for an access request.
-Prints personal data: send it only to that person.
+Prints personal data: send it only to that person. Enter ANALYTICS_ID_SECRET as in
+docs/analytics-operations.md, "Entering secrets".
 
-    ANALYTICS_ID_SECRET=... python scripts/export_analytics_subject.py <user-id>
+    python scripts/export_analytics_subject.py <user-id>
 """
 import json
 import os

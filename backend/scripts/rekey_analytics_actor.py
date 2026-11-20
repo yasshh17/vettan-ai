@@ -1,8 +1,9 @@
 """
 Rotates ANALYTICS_ID_SECRET, moving every linked row to the new key.
-Set ANALYTICS_ENABLED=false on the backend first. See docs/analytics-operations.md.
+Set ANALYTICS_ENABLED=false on the backend first. Enter ANALYTICS_ID_SECRET_OLD and
+ANALYTICS_ID_SECRET as in docs/analytics-operations.md, "Entering secrets".
 
-    ANALYTICS_ID_SECRET_OLD=... ANALYTICS_ID_SECRET=... python scripts/rekey_analytics_actor.py
+    python scripts/rekey_analytics_actor.py
 """
 import os
 import sys
