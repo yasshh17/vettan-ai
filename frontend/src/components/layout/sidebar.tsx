@@ -7,6 +7,7 @@ import { UserMenu } from "@/components/auth/user-menu"
 import { HISTORY_URL } from '@/lib/api'
 import { authGet, authPatch, authDelete, withAuthRedirect } from '@/lib/auth-fetch'
 import { createClient } from '@/lib/supabase/client'
+import { track } from '@/lib/analytics'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -684,7 +685,11 @@ export default function Sidebar({ onSelectQuery, isExpanded, setIsExpanded }: Si
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  // Once per search, not per keystroke.
+                  if (!searchQuery && e.target.value) track('history_searched')
+                  setSearchQuery(e.target.value)
+                }}
                 placeholder="Search conversations..."
                 className="w-full bg-neutral-800 border border-neutral-700 rounded-lg pl-3 pr-8 py-2 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 transition-all duration-200"
               />

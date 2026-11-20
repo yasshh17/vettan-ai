@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { ChevronDown, FileText, ExternalLink } from "lucide-react"
+import { track } from "@/lib/analytics"
 
 interface Source {
   domain: string
@@ -20,7 +21,10 @@ export function CollapsibleSources({ sources }: CollapsibleSourcesProps) {
   return (
     <div className="space-y-3">
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          if (!isExpanded) track("sources_expanded", { count: Math.min(sources.length, 50) })
+          setIsExpanded(!isExpanded)
+        }}
         className="group w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-500/8 border border-purple-500/30 hover:bg-purple-500/12 hover:border-purple-500/40 hover:shadow-[0_0_16px_rgba(139,92,246,0.15)] active:scale-[0.98] transition-all duration-200"
         aria-expanded={isExpanded}
         aria-label={isExpanded ? "Collapse sources" : "Expand sources"}
@@ -61,6 +65,7 @@ export function CollapsibleSources({ sources }: CollapsibleSourcesProps) {
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => track("citation_clicked")}
               className="group flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-neutral-900/50 border border-neutral-800 hover:bg-neutral-900 hover:border-neutral-700 hover:shadow-sm active:scale-[0.98] transition-all duration-200 animate-in fade-in slide-in-from-top-2"
               style={{ animationDelay: `${index * 30}ms` }}
               aria-label={`Open source ${index + 1}: ${source.domain}`}

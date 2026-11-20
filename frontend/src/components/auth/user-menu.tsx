@@ -5,6 +5,7 @@ import { ChevronsUpDown, Loader2, LogOut, Settings } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 import { signOutAndReset } from "@/lib/sign-out"
+import { flushEvents, track } from "@/lib/analytics"
 import { initials } from "@/lib/utils"
 import { SettingsDialog } from "@/components/settings/settings-dialog"
 import {
@@ -39,6 +40,9 @@ export function UserMenu({ isExpanded }: { isExpanded: boolean }) {
   const handleSignOut = async () => {
     setSigningOut(true)
     try {
+      // Sent first: signing out reloads the page and ends the session.
+      track("signed_out")
+      await flushEvents()
       // No reset on success: signOut() replaces the page.
       await signOutAndReset()
     } catch {

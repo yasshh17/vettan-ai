@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from "react"
 import { ArrowUp, Square, Mic, AudioWaveform } from "lucide-react"
 import { refreshHistory, confirmSessionSaved } from "@/lib/api"
 import { authPost, ContentBlockedError, limitTitle, RateLimitedError } from "@/lib/auth-fetch"
-import { streamResearch, type StreamError, type StreamEvent } from "@/lib/research-stream"
+import { streamResearch, type QuestionSource, type StreamError, type StreamEvent } from "@/lib/research-stream"
+import { SUGGESTED_QUESTIONS } from "@/lib/suggested-questions"
 import { useToast } from "@/hooks/use-toast"
 import { isSupportMessage } from "@/components/research/refusal-banner"
 
@@ -68,6 +69,8 @@ export function StickySearchBar({
   const { toast } = useToast()
   // Read only; clearing here would break under StrictMode's double-invoked initializer.
   const [query, setQuery] = useState(() => pendingQueryRef?.current ?? "")
+  // How the text in the box got there. Any keyboard edit makes it "typed".
+  const sourceRef = useRef<QuestionSource>("typed")
   const [isFocused, setIsFocused] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [showMicTooltip, setShowMicTooltip] = useState(false)
@@ -130,6 +133,7 @@ export function StickySearchBar({
           const transcript = Array.from(event.results)
             .map((result: any) => result[0].transcript)
             .join("")
+          sourceRef.current = "voice"
           setQuery(transcript)
         }
 
@@ -178,6 +182,7 @@ export function StickySearchBar({
       query: submitted,
       max_iterations: 25,
       use_cache: true,
+      source: sourceRef.current,
       ...(isFollowUp ? { session_id: currentSessionId!, is_followup: true } : {})
     }
     const context = { query: submitted, isFollowUp }
@@ -375,7 +380,11 @@ export function StickySearchBar({
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            // The suggestion chips fill the box through this same event.
+            sourceRef.current = SUGGESTED_QUESTIONS.includes(e.target.value) ? "suggested" : "typed"
+            setQuery(e.target.value)
+          }}
           onKeyDown={handleKeyDown}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
