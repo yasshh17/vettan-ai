@@ -10,10 +10,11 @@ new links at once and deletes linked rows. Runbooks for the secrets, the purge a
 stuck erasures are in [analytics-operations.md](analytics-operations.md).
 
 - Writer: [`backend/utils/analytics.py`](../backend/utils/analytics.py)
+- Usage events: [`backend/utils/product_events.py`](../backend/utils/product_events.py)
 - Consent and erasure: [`backend/utils/analytics_privacy.py`](../backend/utils/analytics_privacy.py)
 - Summary: [`backend/utils/analytics_summary.py`](../backend/utils/analytics_summary.py)
 - Migrations: [`0008_analytics_events.sql`](../supabase/migrations/0008_analytics_events.sql), [`0009_answer_feedback.sql`](../supabase/migrations/0009_answer_feedback.sql), [`0011_analytics_privacy.sql`](../supabase/migrations/0011_analytics_privacy.sql)
-- Tests: [`test_analytics.py`](../backend/tests/test_analytics.py), [`test_analytics_privacy.py`](../backend/tests/test_analytics_privacy.py), [`test_analytics_sql.py`](../backend/tests/test_analytics_sql.py), [`test_analytics_runbooks.py`](../backend/tests/test_analytics_runbooks.py), [`test_feedback.py`](../backend/tests/test_feedback.py)
+- Tests: [`test_analytics.py`](../backend/tests/test_analytics.py), [`test_analytics_privacy.py`](../backend/tests/test_analytics_privacy.py), [`test_analytics_sql.py`](../backend/tests/test_analytics_sql.py), [`test_analytics_runbooks.py`](../backend/tests/test_analytics_runbooks.py), [`test_feedback.py`](../backend/tests/test_feedback.py), [`test_product_events.py`](../backend/tests/test_product_events.py)
 
 ## Setup
 
@@ -124,6 +125,36 @@ aren't covered.
 | `rate_limit` | `request_blocked` only: the rate limit or the in-flight cap. |
 | `spend_limit` | `request_blocked` only: a daily spend cap. |
 | `moderation` | `request_blocked` only: input moderation. |
+
+## Usage events
+
+`product_events` records what people do in the app, such as opening a chat. It is
+stored only for people who said yes, and always under their coded ID. The database
+checks consent again at write time and drops the event if the answer is no.
+
+| Event | Sent by | Props |
+|---|---|---|
+| `research_submitted` | API, once the question is accepted and charged (or served from the cache) | `source`: `typed`, `suggested` or `voice`; `is_followup` |
+| `audio_generated` | API | |
+| `chat_opened` | API | |
+| `chat_favorited` | API | `favorite` |
+| `chat_renamed` | API | |
+| `chat_deleted` | API | |
+| `page_viewed` | Browser | `route`, from a fixed list |
+| `signed_in`, `signed_out` | Browser | |
+| `sources_expanded` | Browser | `count`, 0 to 50 |
+| `citation_clicked`, `audio_downloaded`, `history_searched` | Browser | |
+
+The browser sends batches of up to 20 to `POST /api/events`. The coded ID comes
+from the access token; an id in the body is ignored. The browser can't send API
+events. Unknown events, props and values are dropped, and no prop holds free text.
+Browser events carry a `visit_id`, a random UUID that lives only in the page's
+memory. API events have none.
+
+Nothing is stored for admins (`ANALYTICS_ADMIN_USER_IDS`), when the request has
+`Sec-GPC: 1` (Global Privacy Control), when `ANALYTICS_ENABLED` is false, or when
+`ANALYTICS_ID_SECRET` is missing. In those cases, and when consent is off, the
+response says `stop: true` so the tracker stops sending.
 
 ## Metric definitions
 
