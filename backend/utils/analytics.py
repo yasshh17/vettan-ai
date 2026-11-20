@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -71,6 +72,12 @@ _METADATA_BOOLS = frozenset({"decomposition_fallback", "cost_partial"})
 _METADATA_INTS = frozenset({"synthesis_ttft_ms", "input_tokens", "output_tokens"})
 
 _MAX_PENDING = 256
+
+
+def admin_ids() -> frozenset:
+    # Empty means no admins.
+    raw = os.getenv("ANALYTICS_ADMIN_USER_IDS", "")
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
 
 
 def _non_negative_int(value: Any) -> Optional[int]:
@@ -183,10 +190,10 @@ _idle = threading.Condition()
 _warned_unavailable = False
 
 
-def _write(row: Dict[str, Any], user_id: Optional[str]) -> None:
+def _run(task: Callable[[], Any], label: str) -> None:
     global _pending, _warned_unavailable
     try:
-        store.insert(row, user_id)
+        task()
     except AnalyticsUnavailable as e:
         if not _warned_unavailable:
             _warned_unavailable = True
@@ -195,7 +202,7 @@ def _write(row: Dict[str, Any], user_id: Optional[str]) -> None:
         # Type and code only; driver messages can echo the row.
         logger.warning(
             "Analytics event %s not recorded: %s%s",
-            row.get("event_type"),
+            label,
             type(e).__name__,
             f" ({e.code})" if isinstance(getattr(e, "code", None), str) else "",
         )
@@ -205,25 +212,30 @@ def _write(row: Dict[str, Any], user_id: Optional[str]) -> None:
             _idle.notify_all()
 
 
+def submit(task: Callable[[], Any], label: str) -> None:
+    """Run a write on the analytics workers. Raises only if the pool itself fails."""
+    global _pending
+    with _idle:
+        if _pending >= _MAX_PENDING:
+            logger.warning("Analytics backlog full; %s event dropped", label)
+            return
+        _pending += 1
+    try:
+        _executor.submit(_run, task, label)
+    except Exception:
+        with _idle:
+            _pending -= 1
+            _idle.notify_all()
+        raise
+
+
 def record(event_type: str, *, user_id: Optional[str] = None, **fields: Any) -> None:
     """Queue an event. Never raises or waits on the database."""
-    global _pending
     try:
         if not ENABLED:
             return
         row = build_event(event_type, **fields)
-        with _idle:
-            if _pending >= _MAX_PENDING:
-                logger.warning("Analytics backlog full; %s event dropped", event_type)
-                return
-            _pending += 1
-        try:
-            _executor.submit(_write, row, user_id)
-        except Exception:
-            with _idle:
-                _pending -= 1
-                _idle.notify_all()
-            raise
+        submit(lambda: store.insert(row, user_id), event_type)
     except Exception as e:
         logger.warning("Analytics event %s not recorded: %s", event_type, type(e).__name__)
 

@@ -808,6 +808,13 @@ Reads or changes the caller's own product analytics choice. Turning it off stops
 links at once, then deletes linked rows. Granting returns `409` while an erase is
 pending. `POST /api/analytics/consent/notice` clears the one-time completion notice.
 
+#### **POST `/api/events`**
+
+Usage events from the browser, up to 20 per request:
+`{ events: [{ event, props, visit_id }] }`. Stored only with consent, under the
+caller's coded ID. Returns `{ stored, stop }`; `stop: true` means nothing will be
+stored, so the browser stops sending. See [docs/analytics.md](docs/analytics.md#usage-events).
+
 #### **PUT `/api/feedback`** and **GET `/api/feedback?session_id=`**
 
 Thumbs up/down on an answer in one of the caller's sessions:
@@ -1043,6 +1050,8 @@ RATE_LIMIT_WRITE_CAPACITY=30
 RATE_LIMIT_WRITE_REFILL_PER_MIN=30
 RATE_LIMIT_ACCOUNT_CAPACITY=3
 RATE_LIMIT_ACCOUNT_REFILL_PER_MIN=1
+RATE_LIMIT_EVENTS_CAPACITY=30    # /api/events
+RATE_LIMIT_EVENTS_REFILL_PER_MIN=20
 
 # In-flight cap. A rate limit bounds how often requests start, not how many
 # run at once; a research request holds several upstream connections for

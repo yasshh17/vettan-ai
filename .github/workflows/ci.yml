@@ -115,6 +115,9 @@ jobs:
       - name: Analytics runbook tests
         run: python tests/test_analytics_runbooks.py
 
+      - name: Usage event tests
+        run: python tests/test_product_events.py
+
       - name: Analytics SQL tests
         env:
           ANALYTICS_TEST_DATABASE_URL: postgresql://postgres@localhost:5432/postgres

@@ -3,8 +3,8 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Literal, Optional
+from pydantic import BaseModel, Field, StrictBool, StrictInt, StrictStr, StringConstraints
+from typing import Annotated, List, Dict, Any, Literal, Optional, Union
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -61,7 +61,9 @@ from utils.rate_limit_http import (
     request_ip,
     warn_if_multiprocess,
 )
-from utils import analytics, analytics_privacy, analytics_summary, audit, feedback, moderation, spend_guard
+from utils import (
+    analytics, analytics_privacy, analytics_summary, audit, feedback, moderation, product_events, spend_guard,
+)
 
 logging.getLogger("uvicorn.access").addFilter(audit.RedactClientIP())
 
@@ -187,6 +189,8 @@ class ResearchRequest(BaseModel):
     use_cache: bool = True
     session_id: Optional[str] = None
     is_followup: bool = False
+    # How the question was entered. Analytics only.
+    source: Literal["typed", "suggested", "voice"] = "typed"
 
 class Message(BaseModel):
     id: str
@@ -293,6 +297,20 @@ audio_user = rate_limited("audio", get_current_user, _rate_limit_store)
 read_user = rate_limited("read", get_current_user, _rate_limit_store)
 write_user = rate_limited("write", get_current_user, _rate_limit_store)
 account_user = rate_limited("account", get_current_user, _rate_limit_store)
+events_user = rate_limited("events", get_current_user, _rate_limit_store)
+
+
+def _gpc(http: Request) -> bool:
+    # Global Privacy Control: the browser asks not to be tracked.
+    return http.headers.get("sec-gpc", "").strip() == "1"
+
+
+def _research_submitted(user: AuthedUser, request: ResearchRequest, http: Request, is_followup: bool) -> None:
+    # Once accepted, so a stream that falls back to /api/research isn't counted twice.
+    product_events.record(
+        "research_submitted", user_id=user.id, gpc=_gpc(http),
+        source=request.source, is_followup=is_followup,
+    )
 
 
 def _moderation_block(verdict: Any, request_type: str) -> HTTPException:
@@ -505,6 +523,7 @@ async def _cached_session(db, query: str, user_id: str) -> Optional[Dict[str, An
 @app.post("/api/research", response_model=ResearchResponse)
 async def research(
     request: ResearchRequest,
+    http: Request,
     user: AuthedUser = Depends(research_user)
 ):
     """
@@ -561,6 +580,7 @@ async def research(
             logger.info(f"Context prepared with {len(conversation_history[-6:])} recent messages")
 
             await _charge_request(user, "followup")
+            _research_submitted(user, request, http, is_followup=True)
 
             track.stage = "synthesis"
             # Earlier messages only: handle_followup appends the question itself.
@@ -640,6 +660,7 @@ async def research(
         is_new_session = not cached_result
         if is_new_session:
             await _charge_request(user, "research")
+            _research_submitted(user, request, http, is_followup=False)
             track.stage = "pipeline"
             result = await research_complete(request.query)
             # The output is an error message here; saving it would also cache it for this query.
@@ -654,6 +675,7 @@ async def research(
             track.stage = "internal"
             session_id = str(uuid.uuid4())
         else:
+            _research_submitted(user, request, http, is_followup=False)
             session_id = result.get('metadata', {}).get('session_id')
 
         output = result.get('output', '')
@@ -720,6 +742,7 @@ async def research(
 @app.post("/api/research/stream")
 async def research_stream_endpoint(
     request: ResearchRequest,
+    http: Request,
     user: AuthedUser = Depends(research_user)
 ):
     """
@@ -776,6 +799,7 @@ async def research_stream_endpoint(
     track = analytics.RequestTracker(
         user.id, "followup" if is_followup else "research", "stream", started=request_started
     )
+    _research_submitted(user, request, http, is_followup)
 
     async def event_stream():
         saved = False
@@ -1028,6 +1052,7 @@ async def get_session_messages(
 @app.post("/api/audio")
 async def generate_audio(
     request: AudioRequest,
+    http: Request,
     user: AuthedUser = Depends(audio_user)
 ):
     """Text to speech. Authenticated because it spends OpenAI credits."""
@@ -1066,6 +1091,7 @@ async def generate_audio(
         
         if not audio_bytes:
             raise HTTPException(status_code=500, detail="Audio generation failed")
+        product_events.record("audio_generated", user_id=user.id, gpc=_gpc(http))
         
         import base64
         audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
@@ -1129,6 +1155,7 @@ async def get_history(
 @app.get("/api/history/{session_id}")
 async def get_session(
     session_id: str,
+    http: Request,
     user: AuthedUser = Depends(read_user)
 ):
     """A session and all its messages. Someone else's session is a 404, same as a missing one."""
@@ -1147,6 +1174,7 @@ async def get_session(
             raise HTTPException(status_code=404, detail="Session not found")
 
         logger.info("Session found")
+        product_events.record("chat_opened", user_id=user.id, gpc=_gpc(http))
 
         messages = await asyncio.to_thread(db.get_conversation_history, session_id, user.id)
         
@@ -1195,6 +1223,7 @@ async def get_session(
 async def update_session(
     session_id: str,
     request: UpdateSessionRequest,
+    http: Request,
     user: AuthedUser = Depends(write_user)
 ):
     """Rename or favorite one of the caller's sessions."""
@@ -1226,6 +1255,10 @@ async def update_session(
             raise HTTPException(status_code=404, detail="Session not found")
         
         logger.info(f"Session updated successfully")
+        if new_title:
+            product_events.record("chat_renamed", user_id=user.id, gpc=_gpc(http))
+        if is_favorite is not None:
+            product_events.record("chat_favorited", user_id=user.id, gpc=_gpc(http), favorite=is_favorite)
         
         return {
             "success": True,
@@ -1371,6 +1404,40 @@ async def ack_analytics_consent_notice(user: AuthedUser = Depends(write_user)):
         raise HTTPException(status_code=500, detail="Failed to update analytics settings")
 
 
+_PropKey = Annotated[str, StringConstraints(max_length=40)]
+_PropValue = Union[StrictBool, StrictInt, Annotated[StrictStr, StringConstraints(max_length=40)]]
+
+
+class ProductEventIn(BaseModel):
+    event: str = Field(..., max_length=40)
+    props: Dict[_PropKey, _PropValue] = Field(default_factory=dict, max_length=8)
+    visit_id: Optional[str] = Field(None, max_length=36)
+
+
+class ProductEventsRequest(BaseModel):
+    events: List[ProductEventIn] = Field(..., max_length=product_events.MAX_BATCH)
+
+
+@app.post("/api/events")
+async def record_product_events(body: ProductEventsRequest, http: Request, user: AuthedUser = Depends(events_user)):
+    """
+    Usage events from the browser. The coded ID comes from the token, never the body.
+    stop tells the tracker nothing will be stored, so it can stop sending.
+    """
+    events = [
+        clean for clean in (product_events.build_event(e.event, e.props, e.visit_id) for e in body.events)
+        if clean is not None
+    ]
+    try:
+        stored = await asyncio.to_thread(product_events.write, user.id, events, gpc=_gpc(http))
+    except Exception as e:
+        logger.warning(f"Product events not recorded: {type(e).__name__}")
+        return {"stored": 0, "stop": False}
+    if stored is None:
+        return {"stored": 0, "stop": True}
+    return {"stored": stored, "stop": bool(events) and stored == 0}
+
+
 def _health_token_matches(authorization: Optional[str]) -> bool:
     if not authorization or not authorization.startswith("Bearer "):
         return False
@@ -1408,12 +1475,6 @@ async def analytics_purge_health(request: Request, authorization: Optional[str] 
     )
 
 
-def _analytics_admin_ids() -> frozenset:
-    # Empty means no admins.
-    raw = os.getenv("ANALYTICS_ADMIN_USER_IDS", "")
-    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
-
-
 @app.get("/api/admin/analytics/summary")
 async def analytics_summary_endpoint(
     request: Request,
@@ -1421,7 +1482,7 @@ async def analytics_summary_endpoint(
     user: AuthedUser = Depends(read_user)
 ):
     """Aggregate metrics for the last `days` UTC days. Admins only."""
-    if user.id.lower() not in _analytics_admin_ids():
+    if user.id.lower() not in analytics.admin_ids():
         audit.record("admin_denied", user_id=user.id, ip=request_ip(request), path=request.url.path)
         raise HTTPException(status_code=403, detail="Not allowed")
 
@@ -1493,6 +1554,7 @@ async def get_feedback(session_id: uuid.UUID, user: AuthedUser = Depends(read_us
 @app.delete("/api/history/{session_id}")
 async def delete_session(
     session_id: str,
+    http: Request,
     user: AuthedUser = Depends(write_user)
 ):
     """Delete one of the caller's sessions and its messages."""
@@ -1510,6 +1572,7 @@ async def delete_session(
             raise HTTPException(status_code=404, detail="Session not found")
         
         logger.info(f"Session deleted successfully")
+        product_events.record("chat_deleted", user_id=user.id, gpc=_gpc(http))
 
         # After the delete, so a ratings failure can't keep a chat the user removed.
         # What's left holds no text, and goes with the account.
