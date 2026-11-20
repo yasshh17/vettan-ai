@@ -64,6 +64,13 @@ function openSettings() {
   render(<SettingsDialog open onOpenChange={vi.fn()} user={user as any} />)
 }
 
+// The switch is disabled until the saved choice loads, and a click before then does nothing.
+async function loadedSwitch() {
+  const toggle = await screen.findByRole("switch", { name: "Product analytics" })
+  await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false))
+  return toggle
+}
+
 beforeEach(() => {
   sessionMetadata.value = {}
   signUp.mockResolvedValue({ data: { user: { identities: [{}] }, session: null }, error: null })
@@ -210,7 +217,7 @@ describe("settings", () => {
 
   it("withdraws at once from the switch", async () => {
     openSettings()
-    const toggle = await screen.findByRole("switch", { name: "Product analytics" })
+    const toggle = await loadedSwitch()
     expect(toggle.getAttribute("aria-checked")).toBe("true")
 
     fireEvent.click(toggle)
@@ -223,7 +230,7 @@ describe("settings", () => {
   it("keeps the app usable and says so while an erase is pending", async () => {
     authPut.mockResolvedValue({ ...declined, erasure_pending: true })
     openSettings()
-    fireEvent.click(await screen.findByRole("switch", { name: "Product analytics" }))
+    fireEvent.click(await loadedSwitch())
 
     expect(await screen.findByText("Product analytics is off. We're still deleting your linked usage history."))
       .toBeTruthy()
@@ -240,7 +247,7 @@ describe("settings", () => {
   it("puts the switch back if saving fails", async () => {
     authPut.mockRejectedValue(new Error("network"))
     openSettings()
-    const toggle = await screen.findByRole("switch", { name: "Product analytics" })
+    const toggle = await loadedSwitch()
     fireEvent.click(toggle)
 
     await waitFor(() => expect(toast).toHaveBeenCalled())
