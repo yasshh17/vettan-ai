@@ -665,7 +665,8 @@ class VettanDatabaseV2:
 
             update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
 
-            print(f"✏️ Updating session: {session_id[:8]}... with {update_data}")
+            # Field names only: a new title is user content.
+            print(f"✏️ Updating session: {session_id[:8]}... fields {sorted(update_data)}")
 
             result = self.client.table('research_sessions') \
                 .update(update_data) \
@@ -678,7 +679,7 @@ class VettanDatabaseV2:
                 print(f"❌ Session not found: {session_id}")
                 return False
             
-            logger.info(f"✅ Session updated: {session_id[:8]}... with {update_data}")
+            logger.info(f"✅ Session updated: {session_id[:8]}... fields {sorted(update_data)}")
             print(f"✅ Session updated: {session_id[:8]}")
             return True
             

@@ -23,7 +23,6 @@ export interface LegalSection {
 }
 
 export interface LoadedLegalDoc extends LegalDocument {
-  lastUpdated: string
   intro: string
   keyPoints: string
   body: string
@@ -63,7 +62,8 @@ export function smartQuotes(markdown: string): string {
 
 export function parseLegalDoc(slug: LegalSlug, markdown: string): LoadedLegalDoc {
   // The page header shows these.
-  const content = smartQuotes(fillPlaceholders(markdown))
+  const dated = markdown.replaceAll("{{LAST_UPDATED}}", LEGAL_DOCUMENTS[slug].lastUpdated)
+  const content = smartQuotes(fillPlaceholders(dated))
     .split("\n")
     .filter((line) => !line.startsWith("# ") && !line.startsWith("**Last updated:**"))
     .join("\n")
@@ -85,7 +85,6 @@ export function parseLegalDoc(slug: LegalSlug, markdown: string): LoadedLegalDoc
 
   return {
     ...LEGAL_DOCUMENTS[slug],
-    lastUpdated: LEGAL_VALUES.LAST_UPDATED,
     intro: content.slice(0, keyPointsAt).trim(),
     keyPoints: content.slice(keyPointsAt + KEY_POINTS_HEADING.length, bodyAt).trim(),
     body,

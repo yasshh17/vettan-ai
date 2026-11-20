@@ -4,14 +4,15 @@ export const PRIVACY = `# Privacy Policy
 
 This Privacy Policy explains how {{OPERATOR_NAME}} ("**we**", "**us**" or "**our**") collects, uses, and shares personal information when you use Vettan (the "**Service**"). We are responsible for this information as its data controller.
 
-Vettan is a free, non-commercial demonstration project run by one person. We collect only what the Service needs to work, and we try to describe that precisely here.
+Vettan is a free, non-commercial demonstration project run by one person. We keep what we collect to a minimum, and we try to describe all of it precisely here.
 
 ## Key points
 
 - We collect your **name and email address**, the **questions you ask**, the **answers you receive**, and limited **technical and usage data**.
 - To answer a question, we send it to **OpenAI** (AI models) and send search terms derived from it to **Tavily** (web search). OpenAI doesn't train on data sent through its API and keeps it for up to 30 days for abuse monitoring. Tavily handles search terms under its own privacy policy.
+- **Only if you allow it**, we record which features you use, such as opening a chat or downloading audio, linked to a coded ID. **Never your questions or answers.** You can turn this off anytime in **Settings**.
 - We **don't sell** your information, **don't show ads**, **don't use analytics or advertising cookies**, and **don't train AI models** on your content.
-- You can **delete any conversation, or your whole account, yourself** from the app. Deleting your account erases your history immediately.
+- You can **delete any conversation, or your whole account, yourself** from the app. Deleting your account erases your conversations immediately.
 - Vettan is for people aged **{{MIN_AGE}} and over**.
 
 ## 1. Scope
@@ -32,13 +33,19 @@ It does not cover the third-party websites that answers cite or link to. Those s
 ### Information created when you use the Service
 
 - **Answers.** The reports and answers generated for you, with the sources cited (titles and website addresses).
-- **Usage records.** For each day you use the Service: how many research questions, follow-ups, and audio characters you used, and an estimate of the cost. We use these to enforce daily limits.
+- **Daily usage records.** For each day you use the Service: how many research questions, follow-ups, and audio characters you used, and an estimate of the cost. We use these only to enforce daily limits, not for analytics.
+- **Answer ratings.** If you give an answer a thumbs up or down, we store the rating with your account, the conversation and answer it belongs to, and whether it was a follow-up. Never any text.
+- **Service performance records.** For each question and follow-up, and each one our limits or screening turned away: how long each step took, how many searches and sources were used, whether it worked or where it failed, and an estimated cost. They never include your question, the answer, the sources, or your email address. They aren't linked to you unless you've allowed product analytics, in which case they carry the coded ID described below.
+- **Product usage data, only if you allow it.** Which features you use: the pages you open in Vettan, signing in and out, asking a question (and whether you typed it, picked a suggestion or spoke it), opening, renaming, favoriting or deleting a conversation, opening the sources or a source, creating or downloading audio, and searching your history. Each record holds the action, a few fixed details such as a count, and the time. Never your questions, answers, conversation titles, what you searched for, or source addresses.
+- **Coded ID.** Product usage data is linked to a coded ID: a code made from your account ID with a secret key. It doesn't show who you are on its own, but because we hold the key it still counts as personal data.
+- **Visit ID.** Records sent from your browser also carry a visit ID, a random code made for a single visit so that visit's actions can be grouped. It's held only in the page's memory, never stored on your device, and is kept only inside those usage records.
+- **Your analytics choice.** Whether you allowed product analytics, when and where you decided (at sign-up, when the app asked, or in Settings), and which version of the wording you saw. If you turn it off, we also keep a record of the deletion of your linked history until it's finished.
 - **Moderation results.** When our automated screening flags content, our server logs record the category of the flag (for example, "violence") and a shortened account identifier. We never log the flagged text. Some categories, such as self-harm, can reveal sensitive information, so these records are kept only as long as our server logs and used only to operate and protect the Service.
 - **Audio.** Audio is generated when you ask for it and sent straight to your browser. **We do not store audio files.**
 
 ### Information collected automatically
 
-- **Log data.** Like most web services, our servers and hosting providers keep logs to run the Service and fix problems. These logs can include your IP address, browser type, the time and address of each request, and your account ID. **Our server logs may also include excerpts of your activity**: up to the first 100 characters of a question, the search terms generated from it, and conversation titles. They are kept for a short period (see [Retention](#7-how-long-we-keep-information)).
+- **Log data.** Like most web services, our servers and hosting providers keep logs to run the Service and fix problems. These logs can include your IP address, browser type, the time and address of each request, and your account ID. They are kept for a short period (see [Retention](#7-how-long-we-keep-information)).
 - **Error reports.** When something breaks in the app or on our servers, an error report is sent to our error-tracking provider, Sentry. A report contains the type of error and where in our code it happened, the page or server address involved (without any search parameters), your browser and device type, and a scrambled (one-way hashed) version of your account ID so we can tell how many people an error affects. Error reports **never** include your questions, answers, conversation titles, email address, IP address, cookies, or sign-in tokens. We also send a small sample of timing data (how long pages and requests took) with the same limits.
 - **Authentication events.** Supabase records sign-in, sign-up, and password-reset events, including the IP address and time, for security.
 - **Cookies and browser storage.** See [Cookies and browser storage](#9-cookies-and-browser-storage).
@@ -53,7 +60,8 @@ We use personal information to:
 - **Reuse your own earlier answers.** If you ask a question you've asked before, we may show your saved answer instead of researching it again. Saved answers are only ever reused for the account that created them.
 - **Enforce limits and prevent abuse.** Apply rate limits and daily usage limits, detect automated or abusive use, and keep costs under control.
 - **Keep the Service safe.** Screen questions, answers, and audio text for violations of our [Usage Policy](/usage-policy).
-- **Maintain and improve reliability.** Diagnose errors, monitor performance, and fix bugs.
+- **Maintain and improve reliability.** Diagnose errors, monitor performance and costs, and fix bugs.
+- **Understand how Vettan is used, if you allow it.** See which features are used and where people get stuck, so we can improve the Service.
 - **Communicate with you.** Send emails needed for your account, such as sign-up confirmation and password resets, and reply when you contact us. We don't send marketing emails.
 - **Meet legal obligations** and protect our rights and the rights and safety of others.
 
@@ -69,6 +77,10 @@ We use personal information to:
 |---|---|
 | Providing your account, answers, history, and audio | Performance of our contract with you (the [Terms](/terms)) |
 | Rate limits, usage limits, abuse prevention, content screening, security, and debugging | Our legitimate interests in keeping the Service safe, available, and affordable to run |
+| Service performance records | Our legitimate interests in keeping the Service reliable and its costs under control |
+| Product usage data linked to your coded ID | Your consent, which you can withdraw at any time in Settings |
+| Answer ratings | Our legitimate interests in improving the quality of answers |
+| Your analytics choice, and deleting your linked history when you withdraw | Legal obligation |
 | Account emails and replies to your messages | Performance of our contract, and our legitimate interests |
 | Complying with the law and responding to lawful requests | Legal obligation |
 
@@ -87,7 +99,7 @@ We use the following providers to run the Service. They process personal informa
 
 | Provider | What it does for us | Information involved | Location |
 |---|---|---|---|
-| [Supabase](https://supabase.com/privacy) | Database, user accounts, authentication emails | Name, email, conversations, usage records, authentication events | United States or another region selected for our account |
+| [Supabase](https://supabase.com/privacy) | Database, user accounts, authentication emails | Name, email, conversations, usage records, answer ratings, analytics records, authentication events | United States or another region selected for our account |
 | [Render](https://render.com/privacy) | Hosts the backend that runs research | Requests, log data | United States or another region selected for our account |
 | [Vercel](https://vercel.com/legal/privacy-policy) | Hosts the website | Requests, log data | Global edge network |
 | [OpenAI](https://openai.com/policies/privacy-policy) | AI models, content screening, text-to-speech | Questions, conversation context, source excerpts, answers, audio text | United States |
@@ -110,7 +122,12 @@ We share personal information only:
 |---|---|
 | Account information | Until you delete your account |
 | Conversations and answers | Until you delete the conversation or your account. Deletion removes them from our database immediately |
-| Daily usage records | While your account exists. Deleted with your account |
+| Daily usage records | 90 days. Deleted sooner with your account |
+| Answer ratings | Until you delete the conversation or your account |
+| Service performance records | 90 days. Records linked to your coded ID are deleted sooner if you turn off product analytics or delete your account |
+| Product usage data | 90 days. Deleted sooner if you turn off product analytics or delete your account |
+| Your analytics choice | While your account exists, so we can show what you chose and don't ask again. Deleted with your account |
+| Records of analytics clean-up runs and of admin access to analytics | 1 year. They contain nothing about you |
 | Aggregate daily totals (not linked to any person) | Indefinitely, to manage the Service's costs |
 | Server logs | About {{LOG_RETENTION_DAYS}} days, after which our hosting provider deletes them |
 | Error reports | Up to {{ERROR_REPORT_RETENTION_DAYS}} days, after which Sentry deletes them |
@@ -127,7 +144,11 @@ If the Service shuts down, we will delete personal information after the notice 
 - **See your data.** Your conversation history is available in the app.
 - **Correct your details.** Change your name or email address in **Settings**.
 - **Edit or delete a conversation.** Rename, favorite, or delete any conversation from the sidebar.
-- **Delete your account.** Go to **Settings → Delete account**. This permanently erases your account, conversations, and usage records straight away.
+- **Turn product analytics on or off.** You choose at sign-up or when the app first asks, and can change it anytime in **Settings**. Turning off product analytics stops new linked analytics immediately. We delete linked usage history as soon as possible. If a temporary technical issue prevents immediate completion, we keep linked analytics off, continue retrying securely, and show a notice in Vettan the next time you use it when deletion is complete.
+- **Use Global Privacy Control.** If your browser sends a Global Privacy Control signal, we don't record product usage data from it, even if you've allowed product analytics.
+- **Delete your account.** Go to **Settings → Delete account**. This permanently deletes your account. Your chats are deleted immediately. If we cannot immediately finish deleting linked usage data, your account remains disabled while we complete that work. We will not restore access during this process.
+
+Records that were never linked to a coded ID, such as system totals, can't be matched to you, so we can't delete them individually. They're removed under our 90-day retention period.
 
 ### Rights you can exercise by contacting us
 
@@ -149,13 +170,15 @@ To make a request, email {{CONTACT_EMAIL}} from the address linked to your accou
 
 ## 9. Cookies and browser storage
 
-We use only the storage the Service needs to work. **We don't use analytics, advertising, or cross-site tracking cookies**, so we don't show a cookie consent banner.
+We use only the storage listed below, all of which the Service needs to work. **We don't use analytics, advertising, or cross-site tracking cookies.** Product analytics stores nothing on your device: the visit ID exists only in the page's memory, and you make that choice in the app, not through a cookie banner.
 
 | Name | Type | Purpose | Duration |
 |---|---|---|---|
 | \`sb-…-auth-token\` | Cookie (strictly necessary) | Keeps you signed in securely | Until you sign out, or up to 400 days |
 | \`sb-…-auth-token-code-verifier\` | Cookie (strictly necessary) | Completes sign-up confirmation and password-reset links securely | Until the link is used |
 | \`sidebarExpanded\` | Local storage (functional) | Remembers whether the sidebar is open | Until you clear your browser storage |
+| \`vettan:pendingQuestion\` | Local storage (functional) | Keeps a question you asked on the home page before signing in, so it's ready once you're in | Until it's used or you sign out, and at most 24 hours |
+| \`vettan:draftQuestion\` | Session storage (functional) | Keeps what you've typed in the home page's question box if the page reloads | Until you clear it, sign out, or close the tab |
 
 Our website fonts are served from our own domain, so loading a page does not send your information to a font provider.
 
@@ -166,6 +189,7 @@ We take reasonable technical and organizational measures to protect personal inf
 - encrypting all connections to the Service with HTTPS (TLS);
 - enforcing access controls in the database so that each account can only read its own conversations, and testing that isolation automatically;
 - relying on Supabase to store passwords only in hashed form;
+- linking product usage data only through a coded ID, made with a secret key that isn't stored in the database;
 - limiting access to production systems and keys to the operator.
 
 No online service can be completely secure. Please use a unique password, and don't put sensitive personal information (such as health, financial, or identity details) into your questions. If we become aware of a breach that affects your personal information, we will notify you and the relevant authorities where the law requires.

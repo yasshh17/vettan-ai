@@ -5,7 +5,6 @@ export const LEGAL_VALUES = {
   // TODO: switch to a dedicated address.
   CONTACT_EMAIL: "yasshh17@gmail.com",
   MIN_AGE: "18",
-  LAST_UPDATED: "October 14, 2026",
   // Render Hobby plan keeps logs for 7 days.
   LOG_RETENTION_DAYS: "7",
   // Sentry keeps events 30 days on the free plan, 90 on paid.
@@ -25,6 +24,8 @@ export interface LegalDocument {
   shortTitle: string
   description: string
   version: string
+  // Each document's own date, filled in for {{LAST_UPDATED}}.
+  lastUpdated: string
 }
 
 export const LEGAL_DOCUMENTS: Record<LegalSlug, LegalDocument> = {
@@ -34,13 +35,15 @@ export const LEGAL_DOCUMENTS: Record<LegalSlug, LegalDocument> = {
     shortTitle: "Terms",
     description: "The agreement between you and Vettan when you use the service.",
     version: "1.0",
+    lastUpdated: "October 14, 2026",
   },
   privacy: {
     slug: "privacy",
     title: "Privacy Policy",
     shortTitle: "Privacy",
     description: "What Vettan collects, why, who processes it, and the choices you have.",
-    version: "1.1",
+    version: "1.2",
+    lastUpdated: "November 20, 2026",
   },
   "usage-policy": {
     slug: "usage-policy",
@@ -48,5 +51,6 @@ export const LEGAL_DOCUMENTS: Record<LegalSlug, LegalDocument> = {
     shortTitle: "Usage Policy",
     description: "What you can and can’t use Vettan for, and how the rules are enforced.",
     version: "1.0",
+    lastUpdated: "October 14, 2026",
   },
 }
