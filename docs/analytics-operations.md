@@ -40,7 +40,10 @@ ask ANALYTICS_ID_SECRET
 python backend/scripts/backfill_analytics_actor.py
 ```
 
-Check the result, then apply `0013_drop_analytics_identifiers.sql`.
+Check the result, then apply `0013_drop_analytics_identifiers.sql`. It refuses while a
+consenting person still has rows only the old columns link, so run the backfill again
+if it does. It can't be undone, and a backend older than the analytics release can no
+longer record analytics rows after it.
 
 ## Secret rules
 
