@@ -487,6 +487,41 @@ try:
     big = [{"event": "chat_opened", "visit_id": None, "props": {"x": "y" * 2000}}]
     check("props size is capped", fails(lambda: db.execute(
         "select public.record_product_events(%s, %s, %s, %s)", (keep_user, keep_who, other_fp, Jsonb(big)))))
+
+    print("\nDropping the old identifiers (0013):")
+
+    def apply_0013():
+        # Its own connection, so a refusal can't leave db inside an aborted transaction.
+        with connect() as conn:
+            conn.execute((MIGRATIONS / "0013_drop_analytics_identifiers.sql").read_text())
+
+    def has_column(name):
+        return db.execute("""select count(*) from information_schema.columns
+                             where table_name = 'analytics_events' and column_name = %s""", (name,)).fetchone()[0] == 1
+
+    def has_backfill():
+        return db.execute("select to_regprocedure('public.backfill_analytics_actors(jsonb, text)')").fetchone()[0] is not None
+
+    late_user, late_who = new_user(), actor()
+    set_consent(late_user, True)
+    db.execute("""insert into public.analytics_events (user_id, session_id, event_type, request_type, success)
+                  values (%s, gen_random_uuid(), 'research_completed', 'research', true)""", (late_user,))
+    check("refuses while a consenting person has unlinked rows", fails(apply_0013))
+    check("a refusal drops nothing", has_column("user_id") and has_column("session_id") and has_backfill())
+
+    db.execute("select public.backfill_analytics_actors(%s, %s)",
+               (Jsonb([{"user_id": late_user, "actor_id": late_who}]), other_fp))
+    unlinked_before = count("analytics_events", "actor_id is null")
+    check("applies once the backfill has run", not fails(apply_0013))
+    check("user_id and session_id are gone", not has_column("user_id") and not has_column("session_id"))
+    check("the backfill function is gone", not has_backfill())
+    check("linked rows keep their link", linked("analytics_events", late_who) == 1)
+    check("unlinked rows stay", count("analytics_events", "actor_id is null") == unlinked_before)
+    write_essential(late_user, late_who, other_fp)
+    check("essential rows still record linked", linked("analytics_events", late_who) == 2)
+    set_consent(late_user, False)
+    check("erasure still works", erase(late_user, late_who, other_fp) and linked("analytics_events", late_who) == 0)
+    check("running it again changes nothing", not fails(apply_0013))
 finally:
     db.close()
     with admin_conn() as admin:
