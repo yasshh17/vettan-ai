@@ -62,7 +62,8 @@ from utils.rate_limit_http import (
     warn_if_multiprocess,
 )
 from utils import (
-    analytics, analytics_privacy, analytics_summary, audit, feedback, moderation, product_events, spend_guard,
+    analytics, analytics_access, analytics_privacy, analytics_summary, audit, feedback, moderation, product_events,
+    spend_guard,
 )
 
 logging.getLogger("uvicorn.access").addFilter(audit.RedactClientIP())
@@ -1448,13 +1449,8 @@ def _health_token_matches(authorization: Optional[str]) -> bool:
     return any(results)
 
 
-@app.get("/api/internal/analytics/purge-health", include_in_schema=False)
-async def analytics_purge_health(request: Request, authorization: Optional[str] = Header(None)):
-    """Server to server, for purge-check.yml. Every refusal is a 404."""
-    decision = await _rate_limit_store.consume(f"internal:{request_ip(request)}", POLICIES["internal"])
-    if not decision.allowed or not _health_token_matches(authorization):
-        raise HTTPException(status_code=404, detail="Not Found")
-
+async def _analytics_health_report() -> Dict[str, Any]:
+    """Shared by the purge-health endpoint and the admin dashboard."""
     now = datetime.now(timezone.utc)
     try:
         health = await asyncio.to_thread(analytics_privacy.store.health)
@@ -1462,17 +1458,26 @@ async def analytics_purge_health(request: Request, authorization: Optional[str] 
     except Exception as e:
         logger.warning(f"Analytics health read failed: {type(e).__name__}")
         health, found = {}, ["health_check_failed"]
+    return {
+        "ok": not found,
+        "urgent": "erasure_urgent" in found,
+        "problems": found,
+        "pending_erasures": health.get("pending_erasures"),
+        "last_purge_at": health.get("last_purge_at"),
+        "key_states": health.get("key_states") or {},
+    }
 
-    return JSONResponse(
-        headers={"Cache-Control": "no-store"},
-        content={
-            "ok": not found,
-            "urgent": "erasure_urgent" in found,
-            "problems": found,
-            "pending_erasures": health.get("pending_erasures"),
-            "last_purge_at": health.get("last_purge_at"),
-        },
-    )
+
+@app.get("/api/internal/analytics/purge-health", include_in_schema=False)
+async def analytics_purge_health(request: Request, authorization: Optional[str] = Header(None)):
+    """Server to server, for purge-check.yml. Every refusal is a 404."""
+    decision = await _rate_limit_store.consume(f"internal:{request_ip(request)}", POLICIES["internal"])
+    if not decision.allowed or not _health_token_matches(authorization):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    report = await _analytics_health_report()
+    report.pop("key_states")
+    return JSONResponse(headers={"Cache-Control": "no-store"}, content=report)
 
 
 @app.get("/api/admin/analytics/summary")
@@ -1481,7 +1486,7 @@ async def analytics_summary_endpoint(
     days: int = Query(7, ge=1, le=90),
     user: AuthedUser = Depends(read_user)
 ):
-    """Aggregate metrics for the last `days` UTC days. Admins only."""
+    """Aggregate metrics for the last `days` UTC days. Admins only, and every read is logged."""
     if user.id.lower() not in analytics.admin_ids():
         audit.record("admin_denied", user_id=user.id, ip=request_ip(request), path=request.url.path)
         raise HTTPException(status_code=403, detail="Not allowed")
@@ -1490,12 +1495,23 @@ async def analytics_summary_endpoint(
     if admin_client is None:
         raise HTTPException(status_code=503, detail="Analytics is not configured on this server")
 
+    # Logged before the read, so a failed build still counts as an access.
     try:
-        return await asyncio.to_thread(analytics_summary.build_summary, admin_client, days)
+        await asyncio.to_thread(analytics_access.record, admin_client, user.id, "summary", {"days": days})
+    except analytics_access.AccessLogUnavailable as e:
+        logger.error(f"Analytics access log unavailable: {e}")
+        observability.alert("Analytics access log unavailable; the dashboard is refusing reads. "
+                            "See docs/analytics-operations.md.")
+        raise HTTPException(status_code=503, detail="Access logging unavailable")
+
+    try:
+        summary = await asyncio.to_thread(analytics_summary.build_summary, admin_client, days)
     except Exception as e:
         logger.error(f"Analytics summary failed: {type(e).__name__}")
         observability.capture(e)
         raise HTTPException(status_code=500, detail="Failed to build analytics summary")
+    summary["health"] = await _analytics_health_report()
+    return JSONResponse(headers={"Cache-Control": "no-store"}, content=summary)
 
 
 class FeedbackRequest(BaseModel):

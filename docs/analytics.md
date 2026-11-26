@@ -41,7 +41,9 @@ basis and retention, is listed in [data-inventory.md](data-inventory.md).
    | Variable | Default | Purpose |
    |---|---|---|
    | `SUPABASE_SERVICE_ROLE_KEY` | — | Required. Analytics writes and reads use the service role, the same client as the spend guard. Without it, nothing is recorded and the summary returns 503. |
-   | `ANALYTICS_ADMIN_USER_IDS` | empty | Comma-separated Supabase auth user ids (UUIDs) allowed to read the summary. Empty means nobody can. Find your id under Authentication → Users. |
+   | `ANALYTICS_ADMIN_USER_IDS` | empty | Comma-separated Supabase auth user ids (UUIDs) allowed to read the summary and the dashboard. Empty means nobody can. Find your id under Authentication → Users. |
+   | `ANALYTICS_MIN_CONTRIBUTORS` | `5` | Smallest number of consenting people the dashboard shows. Can be raised, never set below 5. |
+   | `ANALYTICS_MIN_EVENTS` | `5` | Smallest event-only count the dashboard shows. Can be raised, never set below 5. |
    | `ANALYTICS_ENABLED` | `true` | `false` stops all recording. |
    | `ANALYTICS_ID_SECRET` | — | Makes coded IDs. Without it, or if it doesn't match the installed key, nothing is linked. See [the runbook](analytics-operations.md). |
    | `ANALYTICS_AUDIT_LOG_SECRET` | — | Makes admin references in the access log. Never the same value as the id secret. |
@@ -51,14 +53,43 @@ basis and retention, is listed in [data-inventory.md](data-inventory.md).
    | `OPENAI_OUTPUT_USD_PER_1M` | `0.60` | gpt-4o-mini output price. |
    | `TAVILY_USD_PER_SEARCH` | `0.008` | Price of one basic search (1 credit). **Set this to Tavily's real per-credit price.** The default is a placeholder, not a verified figure for your account. |
 
-4. **Read the summary** as a listed admin:
+4. **Open the dashboard** at `/app/analytics` as a listed admin. Nothing in the app
+   links to it. Anyone else gets "page not found", and the backend writes a
+   `[Security] admin_denied` log line. The same data as JSON:
 
    ```bash
    curl "$API_URL/api/admin/analytics/summary?days=7" -H "Authorization: Bearer $ACCESS_TOKEN"
    ```
 
-   `days` is between 1 and 90; use 7 or 30 for the standard periods. A non-admin gets
-   `403` and a `[Security] admin_denied` log line.
+   `days` is between 1 and 90; the page offers 7, 30 and 90.
+
+## Dashboard
+
+**Every read is logged.** Each summary read writes one `analytics_access_log` row
+(admin reference, key epoch, `summary` and the period asked for) before any data is
+read. If it can't, because `ANALYTICS_AUDIT_LOG_SECRET` is missing, isn't the
+installed key, or the insert fails, the read returns 503 "Access logging
+unavailable" with no data, and Sentry gets an alert.
+
+**Small groups are hidden by the backend**, so they never reach the browser:
+
+- Counts of consenting people (active users per day and in the period, new users,
+  retention, people per feature) below `ANALYTICS_MIN_CONTRIBUTORS` show as "fewer
+  than 5 contributors".
+- Event-only counts (feature use, answer ratings) below `ANALYTICS_MIN_EVENTS` show
+  as "fewer than 5 events". An event count never describes distinct people.
+- Where cells add up to a shown total, one hidden cell would be easy to work out by
+  subtraction, so the next smallest is hidden with it. A rate is hidden whenever
+  either of its parts is.
+- System totals stay visible, because they're needed to run the service: requests,
+  completion, failures by stage, blocked requests by reason, cost, latency and
+  requests per day.
+
+At today's size most people and feature cells are hidden. That's the rule working.
+Counts of people describe consenting users only, so they undercount real use.
+
+The page also shows the same health checks as the purge-health workflow, red when an
+erasure is urgent.
 
 ## Access control
 

@@ -1,5 +1,6 @@
 """
 Aggregates for GET /api/admin/analytics/summary. Never return rows or coded ids.
+`summarize` does the math; `protect` hides small groups before anything leaves.
 Metric definitions are in docs/analytics.md.
 """
 from __future__ import annotations
@@ -10,8 +11,10 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from utils import feedback
-from utils.analytics import TABLE
+from utils import analytics_thresholds as thresholds, feedback
+from utils.analytics import BLOCK_REASONS, TABLE
+from utils.analytics_thresholds import CONTRIBUTORS, EVENTS, cell, is_hidden, protect_group, rate
+from utils.product_events import BROWSER_EVENTS, SERVER_EVENTS
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,9 @@ COLUMNS = (
     "total_latency_ms,ttft_ms,search_latency_ms,subquery_count,"
     "successful_search_count,total_search_count,selected_source_count,estimated_cost_usd"
 )
+PRODUCT_TABLE = "product_events"
+# Never props or visit_id.
+PRODUCT_COLUMNS = "id,created_at,actor_id,event"
 PAGE_SIZE = 1000
 MAX_ROWS = 200_000
 
@@ -183,6 +189,8 @@ def summarize(
     followup_ok = by_type["followup_completed"]
     followup_failed = by_type["followup_failed"]
 
+    blocked = Counter(r.get("failure_stage") for r in by_type["request_blocked"])
+
     failures: Dict[str, Counter] = {"research": Counter(), "followup": Counter()}
     for row in fresh_failed + followup_failed:
         failures[row.get("request_type") or "research"][row.get("failure_stage") or "internal"] += 1
@@ -236,6 +244,10 @@ def summarize(
         "retention": summarize_retention(activity_rows or [], days, now),
         "total_estimated_cost_usd": round(sum(_values(rows, "estimated_cost_usd")), 6),
         "failures_by_stage": {kind: dict(counts) for kind, counts in failures.items()},
+        "blocked": {
+            "total": len(by_type["request_blocked"]),
+            "by_reason": {reason: blocked[reason] for reason in sorted(BLOCK_REASONS)},
+        },
         "daily": [
             {
                 "date": (first_day + timedelta(days=i)).isoformat(),
@@ -247,7 +259,79 @@ def summarize(
     }
 
 
-def build_summary(client: Any, days: int, now: Optional[datetime] = None) -> Dict[str, Any]:
+def summarize_product(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Feature use per allowlisted event. Unknown names are left out of the total too."""
+    names = sorted(set(SERVER_EVENTS) | set(BROWSER_EVENTS))
+    events: Counter = Counter()
+    people: Dict[str, set] = defaultdict(set)
+    for row in rows:
+        name = row.get("event")
+        if name not in names:
+            continue
+        events[name] += 1
+        if row.get("actor_id"):
+            people[name].add(row["actor_id"])
+    return {
+        "total_events": sum(events.values()),
+        "contributors": len(set().union(*people.values())),
+        "by_event": {name: {"events": events[name], "contributors": len(people[name])} for name in names},
+    }
+
+
+def protect(
+    summary: Dict[str, Any], product: Dict[str, Any], active_contributors: int, floors: Dict[str, int]
+) -> Dict[str, Any]:
+    """Hides counts of consenting people and event-only counts below their floor.
+    System totals (requests, failures, blocked, cost, latency) stay visible."""
+    people, events = floors[CONTRIBUTORS], floors[EVENTS]
+    out = dict(summary)
+
+    out["daily"] = [{**d, "active_users": cell(d["active_users"], CONTRIBUTORS, people)} for d in summary["daily"]]
+
+    retention = summary["retention"]
+    out["retention"] = {
+        "lookback_days": retention["lookback_days"],
+        "new_users": cell(retention["new_users"], CONTRIBUTORS, people),
+    }
+    for n in RETENTION_DAYS:
+        raw = retention[f"d{n}"]
+        eligible = cell(raw["eligible"], CONTRIBUTORS, people)
+        retained = cell(raw["retained"], CONTRIBUTORS, people)
+        out["retention"][f"d{n}"] = {"eligible": eligible, "retained": retained,
+                                     "rate": rate(retained, eligible, raw["rate"])}
+
+    fb = summary["feedback"]
+    if fb is not None:
+        # No research/follow-up split: one hidden side would be the total minus the other.
+        ratings = cell(fb["ratings"], EVENTS, events)
+        parts = protect_group({"up": fb["up"], "down": fb["down"]}, EVENTS, events,
+                              total_shown=not is_hidden(ratings))
+        out["feedback"] = {
+            "ratings": ratings, "up": parts["up"], "down": parts["down"],
+            "up_rate": rate(parts["up"], ratings, fb["up_rate"]),
+            # Completed answers are shown, so this gives the rating count away.
+            "ratings_per_answer": rate(ratings, ratings, fb["ratings_per_answer"]),
+        }
+
+    total = cell(product["total_events"], EVENTS, events)
+    counts = protect_group({name: v["events"] for name, v in product["by_event"].items()},
+                           EVENTS, events, total_shown=not is_hidden(total))
+    out["product"] = {
+        "total_events": total,
+        "contributors": cell(product["contributors"], CONTRIBUTORS, people),
+        "by_event": {
+            name: {"events": counts[name], "contributors": cell(v["contributors"], CONTRIBUTORS, people)}
+            for name, v in product["by_event"].items()
+        },
+    }
+    out["consenting_users"] = {"active": cell(active_contributors, CONTRIBUTORS, people)}
+    out["floors"] = dict(floors)
+    return out
+
+
+def build_summary(
+    client: Any, days: int, now: Optional[datetime] = None, floors: Optional[Dict[str, int]] = None
+) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     since = window_start(days, now)
     rows, truncated = fetch_rows(client, since)
@@ -262,7 +346,10 @@ def build_summary(client: Any, days: int, now: Optional[datetime] = None) -> Dic
         # 0009 may not be applied yet.
         logger.warning(f"Feedback summary skipped: {type(e).__name__}")
         feedback_rows, feedback_truncated = None, False
-    return summarize(
-        rows, days, now, truncated or activity_truncated or feedback_truncated,
+    product_rows, product_truncated = fetch_rows(client, since, table=PRODUCT_TABLE, columns=PRODUCT_COLUMNS)
+    summary = summarize(
+        rows, days, now, truncated or activity_truncated or feedback_truncated or product_truncated,
         feedback_rows=feedback_rows, activity_rows=activity,
     )
+    active = {r["actor_id"] for r in list(rows) + list(product_rows) if r.get("actor_id")}
+    return protect(summary, summarize_product(product_rows), len(active), floors or thresholds.floors())

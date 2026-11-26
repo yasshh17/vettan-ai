@@ -628,28 +628,47 @@ check("tracker: a completed run uses its final numbers, not progress",
 
 
 # ---------------------------------------------------------------------------
-print("\n[5] Admin summary is admins only")
+print("\n[5] Admin summary is admins only, and every read is logged")
+
+AUDIT_SECRET = "a" * 64
+os.environ["ANALYTICS_AUDIT_LOG_SECRET"] = AUDIT_SECRET
+CODED = "c0ffee" + "0" * 26
 
 
 class FakeQuery:
-    def __init__(self, owner, rows):
+    def __init__(self, owner, name, rows):
         self.owner = owner
+        self.name = name
         self.rows = rows
         self.lo, self.hi = 0, 0
 
     def select(self, cols):
-        self.owner.selected.append(cols)
+        self.owner.selected.append((self.name, cols))
         return self
 
     def gte(self, col, value):
         self.owner.since.append(value)
         return self
 
+    def eq(self, col, value):
+        self.rows = [r for r in self.rows if r.get(col) == value]
+        return self
+
     def order(self, col):
+        return self
+
+    def limit(self, n):
+        self.lo, self.hi = 0, n - 1
         return self
 
     def range(self, lo, hi):
         self.lo, self.hi = lo, hi
+        return self
+
+    def insert(self, row):
+        if self.owner.insert_fails:
+            raise RuntimeError("insert failed")
+        self.owner.inserted.append((self.name, row))
         return self
 
     def execute(self):
@@ -662,16 +681,38 @@ class FakeQuery:
 
 class FakeAdminClient:
     # feedback_rows=None acts like 0009 not being applied.
-    def __init__(self, rows, server_cap=1000, feedback_rows=()):
-        self.tables = {"analytics_events": rows, "answer_feedback": feedback_rows}
+    def __init__(self, rows, server_cap=1000, feedback_rows=(), product_rows=(), audit_key=None):
+        from utils import analytics_keys
+
+        if audit_key is None:
+            audit_key = {"name": "audit", "fingerprint": analytics_keys.fingerprint("audit"), "state": "ok",
+                         "epoch": 3}
+        self.tables = {"analytics_events": rows, "answer_feedback": feedback_rows,
+                       "product_events": product_rows, "analytics_key_check": [audit_key],
+                       "analytics_access_log": []}
         self.server_cap = server_cap
         self.selected = []
         self.since = []
+        self.inserted = []
+        self.insert_fails = False
 
     def table(self, name):
         rows = self.tables[name]
-        return FakeQuery(self, None if rows is None else list(rows))
+        return FakeQuery(self, name, None if rows is None else list(rows))
 
+    def access_rows(self):
+        return [row for name, row in self.inserted if name == "analytics_access_log"]
+
+
+from analytics_fakes import FakePrivacyStore  # noqa: E402
+from utils import analytics_keys, analytics_privacy  # noqa: E402
+
+real_store = analytics_privacy.store
+analytics_privacy.store = FakePrivacyStore()
+analytics_privacy.store.health_data = {
+    "last_purge_at": datetime.now(timezone.utc).isoformat(), "pending_erasures": 0,
+    "key_states": {"id": "ok", "audit": "ok"}, "oldest_row_seconds": {},
+}
 
 now = datetime.now(timezone.utc)
 sample_rows = [
@@ -683,7 +724,11 @@ sample_rows = [
      "request_type": "research", "failure_stage": "search", "total_latency_ms": 7000, "ttft_ms": None,
      "search_latency_ms": 6000, "subquery_count": 3, "successful_search_count": 0, "total_search_count": 3,
      "selected_source_count": 0, "estimated_cost_usd": 0.0241},
+    {"id": 3, "created_at": now.isoformat(), "actor_id": None, "event_type": "request_blocked",
+     "request_type": "research", "failure_stage": "rate_limit"},
 ]
+product_rows = [{"id": i, "created_at": now.isoformat(), "actor_id": CODED, "event": "chat_opened"}
+                for i in range(3)]
 
 main.app.dependency_overrides.clear()
 r = client.get("/api/admin/analytics/summary")
@@ -695,33 +740,59 @@ r = client.get("/api/admin/analytics/summary")
 check("admin list unset -> 403 even for Alice", r.status_code == 403, str(r.status_code))
 
 os.environ["ANALYTICS_ADMIN_USER_IDS"] = f"  {ALICE.upper()} , "
+real_admin = main.get_admin_client
+fake_admin = FakeAdminClient(sample_rows, feedback_rows=[
+    {"id": 1, "rating": "up", "is_followup": False, "created_at": now.isoformat()},
+], product_rows=product_rows)
+main.get_admin_client = lambda: fake_admin
 as_user(BOB)
 r = client.get("/api/admin/analytics/summary")
 check("Bob (not listed) -> 403", r.status_code == 403, str(r.status_code))
+check("a refused read writes no access-log row", fake_admin.access_rows() == [], str(fake_admin.inserted))
 
 as_user(ALICE)
-real_admin = main.get_admin_client
 main.get_admin_client = lambda: None
 r = client.get("/api/admin/analytics/summary")
 check("admin, no service-role client -> 503", r.status_code == 503, str(r.status_code))
 
-fake_admin = FakeAdminClient(sample_rows, feedback_rows=[
-    {"id": 1, "rating": "up", "is_followup": False, "created_at": now.isoformat()},
-])
 main.get_admin_client = lambda: fake_admin
 r = client.get("/api/admin/analytics/summary?days=30")
 check("Alice (listed, any case/whitespace) -> 200", r.status_code == 200, r.text[:200])
 body = r.json()
+check("summary is never cached", r.headers.get("cache-control") == "no-store", str(r.headers))
 check("summary is aggregates only (no user ids in the body)", ALICE not in r.text and BOB not in r.text)
+check("no coded id anywhere in the body", not re.search(r"[0-9a-f]{32}", r.text), r.text[:300])
 check("summary has the expected sections",
       set(body) == {"period_days", "from", "to", "truncated", "research", "followups", "feedback",
-                    "retention", "total_estimated_cost_usd", "failures_by_stage", "daily"}, str(set(body)))
-check("summary includes feedback", body["feedback"]["ratings"] == 1 and body["feedback"]["up_rate"] == 1.0,
-      str(body["feedback"]))
+                    "retention", "total_estimated_cost_usd", "failures_by_stage", "blocked", "daily",
+                    "product", "consenting_users", "floors", "health"}, str(set(body)))
+check("one rating is hidden as fewer than 5 events",
+      body["feedback"]["ratings"] == {"value": None, "hidden": "events", "floor": 5}
+      and body["feedback"]["up_rate"]["value"] is None, str(body["feedback"]))
+check("system totals stay visible",
+      body["research"]["total_requests"] == 2 and body["blocked"]["by_reason"]["rate_limit"] == 1, str(body["blocked"]))
+check("consenting users under 5 are hidden",
+      body["consenting_users"]["active"]["hidden"] == "contributors", str(body["consenting_users"]))
+check("health comes from the same checks as purge-health", body["health"]["ok"] is True, str(body["health"]))
+check("floors are reported", body["floors"] == {"contributors": 5, "events": 5}, str(body["floors"]))
+
+logged = fake_admin.access_rows()
+check("one read -> exactly one access-log row", len(logged) == 1, str(logged))
+row = logged[0] if logged else {}
+check("the log records the admin reference and key epoch",
+      row.get("admin_ref") == analytics_keys.admin_ref(ALICE) and row.get("key_epoch") == 3, str(row))
+check("the admin reference can't be joined with coded ids",
+      row.get("admin_ref") != analytics_keys.actor_id(ALICE, AUDIT_SECRET.encode()) and ALICE not in str(row))
+check("the log records what was asked, not whose data appeared",
+      row.get("action") == "summary" and row.get("params") == {"days": 30}, str(row))
+
+selected = dict(fake_admin.selected)
 check("feedback read selects no ids or text",
-      any(cols == "id,rating,is_followup,created_at" for cols in fake_admin.selected), str(fake_admin.selected))
-check("summary reads only the columns it needs", fake_admin.selected and "*" not in fake_admin.selected[0]
-      and "metadata" not in fake_admin.selected[0])
+      selected.get("answer_feedback") == "id,rating,is_followup,created_at", str(fake_admin.selected))
+check("summary reads only the columns it needs",
+      "*" not in selected["analytics_events"] and "metadata" not in selected["analytics_events"])
+check("feature use never reads props or visit_id",
+      selected.get("product_events") == "id,created_at,actor_id,event", str(selected.get("product_events")))
 check("days=30 -> 30 daily buckets", len(body["daily"]) == 30)
 for bad in (0, 91):
     r = client.get(f"/api/admin/analytics/summary?days={bad}")
@@ -730,6 +801,39 @@ main.get_admin_client = lambda: FakeAdminClient(sample_rows, feedback_rows=None)
 r = client.get("/api/admin/analytics/summary")
 check("feedback table missing: summary still 200, feedback null",
       r.status_code == 200 and r.json()["feedback"] is None, r.text[:200])
+
+print("  fails closed when the read can't be logged:")
+
+
+def refused(admin, label):
+    main.get_admin_client = lambda: admin
+    r = client.get("/api/admin/analytics/summary")
+    check(f"{label} -> 503 with no data",
+          r.status_code == 503 and "research" not in r.text and admin.access_rows() == [], r.text[:200])
+
+
+os.environ["ANALYTICS_AUDIT_LOG_SECRET"] = ""
+refused(FakeAdminClient(sample_rows), "audit secret missing")
+os.environ["ANALYTICS_AUDIT_LOG_SECRET"] = AUDIT_SECRET
+refused(FakeAdminClient(sample_rows, audit_key={"name": "audit", "fingerprint": analytics_keys.fingerprint("audit"),
+                                                "state": "unavailable", "epoch": 3}), "audit key unavailable")
+refused(FakeAdminClient(sample_rows, audit_key={"name": "audit", "fingerprint": "0" * 64, "state": "ok",
+                                                "epoch": 3}), "secret isn't the installed key")
+broken = FakeAdminClient(sample_rows)
+broken.insert_fails = True
+refused(broken, "log insert fails")
+
+failing = FakeAdminClient(None)
+main.get_admin_client = lambda: failing
+r = client.get("/api/admin/analytics/summary")
+check("a failed build is still logged", r.status_code == 500 and len(failing.access_rows()) == 1, r.text[:200])
+
+analytics_privacy.store.down.add("health")
+main.get_admin_client = lambda: FakeAdminClient(sample_rows)
+r = client.get("/api/admin/analytics/summary")
+check("a failed health read doesn't fail the page",
+      r.status_code == 200 and r.json()["health"]["problems"] == ["health_check_failed"], r.text[:200])
+analytics_privacy.store = real_store
 main.get_admin_client = real_admin
 os.environ["ANALYTICS_ADMIN_USER_IDS"] = ""
 
@@ -908,6 +1012,64 @@ check("d30: only Alice and Bob are old enough",
       ret["d30"] == {"eligible": 2, "retained": 1, "rate": 0.5}, str(ret["d30"]))
 check("new users in the 7-day window: Dave only (deleted users skipped)", ret["new_users"] == 1, str(ret))
 
+
+print("\n[9] Small groups are hidden")
+
+from utils import analytics_thresholds as th  # noqa: E402
+
+for value, want in (("", 5), ("2", 5), ("10", 10), ("lots", 5)):
+    os.environ["ANALYTICS_MIN_CONTRIBUTORS"] = value
+    check(f"contributor floor from {value!r} -> {want}", th.floors()["contributors"] == want, str(th.floors()))
+os.environ["ANALYTICS_MIN_CONTRIBUTORS"] = ""
+os.environ["ANALYTICS_MIN_EVENTS"] = "1"
+check("the event floor can't go below 5 either", th.floors()["events"] == 5)
+os.environ["ANALYTICS_MIN_EVENTS"] = ""
+
+group = th.protect_group({"a": 10, "b": 3, "c": 8}, th.EVENTS, 5)
+check("a lone hidden cell takes the next smallest with it",
+      group["b"]["hidden"] == "events" and group["c"]["hidden"] == "events" and group["a"] == {"value": 10}, str(group))
+group = th.protect_group({"a": 10, "b": 3, "c": 8}, th.EVENTS, 5, total_shown=False)
+check("no total shown -> nothing to subtract from", group["c"] == {"value": 8}, str(group))
+group = th.protect_group({"a": 10, "b": 3, "c": 2}, th.EVENTS, 5)
+check("two hidden cells can't be told apart", group["a"] == {"value": 10}, str(group))
+
+FLOORS = {"contributors": 5, "events": 5}
+small = analytics_summary.protect(analytics_summary.summarize(rows, 7, fixed_now),
+                                  analytics_summary.summarize_product([]), 2, FLOORS)
+check("2 daily users -> hidden as fewer than 5 contributors",
+      all(d["active_users"].get("hidden") == "contributors" for d in small["daily"]), str(small["daily"][-1]))
+check("daily requests stay visible", [d["requests"] for d in small["daily"]][-1] == 5)
+check("research totals and failures stay visible",
+      small["research"]["total_requests"] == 7 and small["failures_by_stage"]["research"]["search"] == 1)
+
+crowd = [seen(f"user-{i}", 20) for i in range(8)] + [seen(f"user-{i}", 19) for i in range(3)]
+retention = analytics_summary.protect(
+    analytics_summary.summarize([], 7, fixed_now, activity_rows=crowd),
+    analytics_summary.summarize_product([]), 8, FLOORS)["retention"]
+check("8 eligible shown, 3 retained hidden, and the rate hidden with them",
+      retention["d1"]["eligible"] == {"value": 8} and retention["d1"]["retained"]["hidden"] == "contributors"
+      and retention["d1"]["rate"]["value"] is None, str(retention["d1"]))
+
+ratings = [{"rating": "up", "is_followup": False}] * 7 + [{"rating": "down", "is_followup": False}]
+fb = analytics_summary.protect(analytics_summary.summarize(rows, 7, fixed_now, feedback_rows=ratings),
+                               analytics_summary.summarize_product([]), 0, FLOORS)["feedback"]
+check("7 up and 1 down: both hidden, so the 1 can't be subtracted out",
+      fb["ratings"] == {"value": 8} and fb["up"]["value"] is None and fb["down"]["value"] is None
+      and fb["up_rate"]["value"] is None, str(fb))
+check("no research/follow-up split, which would subtract to a hidden count",
+      not any(k.startswith(("research_", "followup_")) for k in fb), str(sorted(fb)))
+
+product_rows = ([{"actor_id": f"{i:032x}", "event": "chat_opened"} for i in range(6)]
+                + [{"actor_id": "f" * 32, "event": "audio_generated"}, {"actor_id": "f" * 32, "event": "made_up"}])
+raw = analytics_summary.summarize_product(product_rows)
+check("unknown event names are left out of the total", raw["total_events"] == 7, str(raw["total_events"]))
+product = analytics_summary.protect(analytics_summary.summarize([], 7, fixed_now), raw, 7, FLOORS)["product"]
+check("6 chat opens by 6 people are shown",
+      product["by_event"]["chat_opened"] == {"events": {"value": 6}, "contributors": {"value": 6}}, str(product))
+check("1 audio event is hidden", product["by_event"]["audio_generated"]["events"]["hidden"] == "events")
+check("every allowlisted event is listed, even with no use",
+      "history_searched" in product["by_event"] and "made_up" not in product["by_event"])
+check("no coded id leaves protect()", not re.search(r"[0-9a-f]{32}", json.dumps(product)))
 
 main.app.dependency_overrides.clear()
 analytics.flush()
