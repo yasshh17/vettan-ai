@@ -32,18 +32,13 @@ Do this on staging first, then production.
    check is skipped until `release` includes the analytics release, then fails until
    its two values are set, so set them before promoting.
 
-After the release is live, record your own consent, then link old rows and drop the
-old identifiers:
-
-```bash
-ask ANALYTICS_ID_SECRET
-python backend/scripts/backfill_analytics_actor.py
-```
-
-Check the result, then apply `0013_drop_analytics_identifiers.sql`. It refuses while a
-consenting person still has rows only the old columns link, so run the backfill again
-if it does. It can't be undone, and a backend older than the analytics release can no
-longer record analytics rows after it.
+`0013_drop_analytics_identifiers.sql` drops the account and chat ids that rows from
+before the analytics release kept. Staging and production have it; a new project
+applies it after `0012`. It can't be undone, and a backend older than the analytics
+release can no longer record analytics rows after it. It refuses while a consenting
+person still has rows only the old columns link. The backfill that fixed that was
+removed once both environments had 0013; it's in git history at
+`86fe8ef:backend/scripts/backfill_analytics_actor.py`.
 
 ## Secret rules
 

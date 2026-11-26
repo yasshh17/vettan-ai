@@ -88,17 +88,7 @@ for label, value in [("missing", None), ("short", b"short")]:
     except ValueError:
         check(f"a {label} secret is refused", True)
 
-print("\n[2] Backfill")
-client = Client()
-runbooks.backfill(client, OLD)
-name, params = client.calls[0]
-pairs = params["p_pairs"]
-check("calls the backfill RPC", name == "backfill_analytics_actors")
-check("only consenting people get a code", [p["user_id"] for p in pairs] == [ALICE], pairs)
-check("codes come from the given secret", pairs[0]["actor_id"] == analytics_keys.actor_id(ALICE, OLD))
-check("sends the key fingerprint", params["p_fingerprint"] == analytics_keys.fingerprint("id", OLD))
-
-print("\n[3] Re-key")
+print("\n[2] Re-key")
 client = Client()
 runbooks.rekey(client, OLD, NEW)
 name, params = client.calls[0]
@@ -116,7 +106,7 @@ try:
 except ValueError:
     check("re-keying to the same secret is refused", True)
 
-print("\n[4] Install")
+print("\n[3] Install")
 client = Client()
 runbooks.install_key(client, "id", "init", OLD)
 params = client.calls[0][1]
@@ -129,7 +119,7 @@ params = client.calls[0][1]
 check("audit rotation sends the old fingerprint",
       params["p_old_fingerprint"] == analytics_keys.fingerprint("audit", OLD), params)
 
-print("\n[5] Declaring loss")
+print("\n[4] Declaring loss")
 client = Client()
 try:
     runbooks.declare_lost(client, "yes")
@@ -140,7 +130,7 @@ result = runbooks.declare_lost(client, runbooks.LOST_CONFIRMATION)
 check("calls the RPC once confirmed", client.calls[0][0] == "declare_analytics_key_lost", client.calls)
 check("reports what was erased", result == {"product_events": 2}, result)
 
-print("\n[6] Subject export")
+print("\n[5] Subject export")
 client = Client()
 actor = analytics_keys.actor_id(ALICE, OLD)
 client.tables["product_events"] = [{"actor_id": actor, "event": "chat_opened"}, {"actor_id": "other", "event": "x"}]
@@ -151,7 +141,7 @@ check("includes that person's events only",
       [e["event"] for e in export["product_events"]] == ["chat_opened"], export)
 check("includes essential rows linked to them", len(export["analytics_events"]) == 1, export)
 
-print("\n[7] Output")
+print("\n[6] Output")
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     client = Client()
@@ -159,7 +149,7 @@ with contextlib.redirect_stdout(buffer):
     runbooks.rekey(Client(), OLD, NEW)
 check("nothing prints a secret", OLD.decode() not in buffer.getvalue() and NEW.decode() not in buffer.getvalue())
 
-print("\n[8] Health workflow")
+print("\n[7] Health workflow")
 workflow = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "purge-check.yml").read_text()
 every = re.search(r'cron: "\d+ \*/(\d+) \* \* \*"', workflow)
 check("wakes a sleeping backend several times a day", every is not None and int(every.group(1)) <= 6)
