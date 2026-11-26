@@ -47,8 +47,7 @@ failure stage.
 | Retention | 90 days (nightly purge) |
 | Deleted | Rows with the person's `actor_id` on withdrawal or account deletion. Rows with no `actor_id` were never linked to anyone and expire with the purge |
 
-The legacy `user_id` and `session_id` columns are no longer written. Migration
-0013 drops them after the backfill.
+The legacy `user_id` and `session_id` columns were dropped by migration 0013.
 
 ## `usage_daily`
 

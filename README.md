@@ -244,8 +244,7 @@ vettan-ai/
 ├── backend/                         # FastAPI + Python 3.11 (Render)
 │   ├── main.py                      # App, auth dependency, endpoints, SSE streaming
 │   ├── agent/
-│   │   ├── research_pipeline.py     # Decompose → parallel Tavily search → synthesis
-│   │   └── query_decomposer.py      # Sub-query generation
+│   │   └── research_pipeline.py     # Decompose → parallel Tavily search → synthesis
 │   ├── audio/tts.py                 # OpenAI TTS, chunked for long text
 │   ├── database/
 │   │   ├── supabase_client_v2.py    # User-scoped client (RLS applies)
@@ -360,7 +359,6 @@ vettan-ai/
 ```python
 {
   "research_pipeline": "Query decomposition, parallel search, ranking, and synthesis",
-  "query_decomposer": "Generates 3-4 focused search queries",
   "citation_extractor": "Automatic citation parsing",
   "token_tracker": "Cost and usage monitoring"
 }

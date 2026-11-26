@@ -53,18 +53,6 @@ def install_key(
     }).execute()
 
 
-def backfill(client: Any, secret: bytes) -> Any:
-    """Consenting people only. Everyone else's old rows stay unlinked."""
-    require_secret(secret)
-    pairs = [
-        {"user_id": user_id, "actor_id": analytics_keys.actor_id(user_id, secret)}
-        for user_id in sorted(_consenting_users(client))
-    ]
-    return client.rpc("backfill_analytics_actors", {
-        "p_pairs": pairs, "p_fingerprint": analytics_keys.fingerprint("id", secret),
-    }).execute().data
-
-
 def rekey(client: Any, old_secret: bytes, new_secret: bytes) -> None:
     """Linked rows belong to consenting people or a pending erase, so these cover all of them."""
     require_secret(old_secret)
