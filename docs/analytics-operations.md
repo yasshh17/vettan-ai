@@ -125,10 +125,12 @@ ask ANALYTICS_AUDIT_LOG_SECRET
 python backend/scripts/install_analytics_key.py audit rotate
 ```
 
-Then set the new value on Render.
+Then set the new value on Render. Until Render has it, the dashboard refuses reads
+with 503 "Access logging unavailable", because the running secret no longer matches
+the installed key.
 
-**If it's lost:** old entries stay readable, but can't be matched to an admin. Journeys
-and admin reads of consent data stay blocked until a new value is installed:
+**If it's lost:** old entries stay readable, but can't be matched to an admin. The
+dashboard refuses reads until a new value is installed:
 
 ```bash
 ask ANALYTICS_AUDIT_LOG_SECRET

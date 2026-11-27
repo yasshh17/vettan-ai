@@ -131,8 +131,10 @@ One row per table per nightly purge run.
 
 ## `analytics_access_log`
 
-Admin reads of analytics data through the backend. Nothing writes to it yet; the
-admin dashboard will.
+Admin reads of analytics data through the backend. Every dashboard read writes one
+row before any data is read: who (as `admin_ref`), when, the action (`summary`) and
+the period asked for. Never whose data appeared. If the row can't be written, the
+read is refused.
 
 | | |
 |---|---|
