@@ -51,6 +51,11 @@ function cellText(cell: Cell, format: (n: number) => string = String): string {
   return cell.value === null ? "–" : format(cell.value)
 }
 
+// A hidden cell already names its unit ("fewer than 5 events"), so only a shown number gets one.
+function countText(cell: Cell, unit: string): string {
+  return cell.hidden || cell.value === null ? cellText(cell) : `${cell.value} ${unit}`
+}
+
 const percent = (n: number) => `${Math.round(n * 1000) / 10}%`
 const seconds = (ms: number | null) => (ms === null ? "–" : `${(ms / 1000).toFixed(1)} s`)
 
@@ -237,14 +242,18 @@ function Report({ data }: { data: Summary }) {
           <Stat label="Active in period" value={cellText(data.consenting_users.active)} />
           <Stat label="New in period" value={cellText(retention.new_users)} />
           {(["d1", "d7", "d30"] as const).map((k) => (
-            <Stat key={k} label={`Back within ${k.slice(1)} days`} value={cellText(retention[k].rate, percent)} />
+            <Stat
+              key={k}
+              label={k === "d1" ? "Back within 1 day" : `Back within ${k.slice(1)} days`}
+              value={cellText(retention[k].rate, percent)}
+            />
           ))}
         </div>
       </Section>
 
       <Section title="Feature use (consenting users)">
         <p className="mb-3 text-xs text-neutral-400">
-          {cellText(product.total_events)} events from {cellText(product.contributors)} people
+          {countText(product.total_events, "events")} from {countText(product.contributors, "people")}
         </p>
         <table className="w-full text-sm">
           <thead>
