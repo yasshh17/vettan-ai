@@ -85,6 +85,26 @@ describe("admin analytics dashboard", () => {
     expect(screen.getByText("6")).toBeInTheDocument()
   })
 
+  it("names each unit once in the feature-use summary", async () => {
+    authGet.mockResolvedValue(summary())
+    render(<AdminDashboard />)
+    expect(await screen.findByText("9 events from fewer than 5 contributors")).toBeInTheDocument()
+    cleanup()
+
+    const hidden = summary()
+    hidden.product = { ...hidden.product, total_events: few("events") }
+    authGet.mockResolvedValue(hidden)
+    render(<AdminDashboard />)
+    expect(await screen.findByText("fewer than 5 events from fewer than 5 contributors")).toBeInTheDocument()
+  })
+
+  it("says 1 day, not 1 days", async () => {
+    authGet.mockResolvedValue(summary())
+    render(<AdminDashboard />)
+    expect(await screen.findByText("Back within 1 day")).toBeInTheDocument()
+    expect(screen.getByText("Back within 7 days")).toBeInTheDocument()
+  })
+
   it("never renders a coded id", async () => {
     authGet.mockResolvedValue(summary())
     const { container } = render(<AdminDashboard />)
